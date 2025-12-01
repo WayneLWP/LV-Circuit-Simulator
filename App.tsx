@@ -3,7 +3,7 @@ import { COMPONENT_CATALOG } from './constants';
 import { ComponentInstance, Wire, Position, WireColor, SimulationResult } from './types';
 import { ComponentNode } from './components/ComponentNode';
 import { runSimulation } from './utils/circuit';
-import { RotateCcw, Zap, Square, ToggleLeft, Lightbulb, Box, ShieldAlert, Trash2, Eye, EyeOff, Copy, Fan, Pipette, Activity, GripHorizontal, ChevronDown, ChevronRight, Plug } from 'lucide-react';
+import { RotateCcw, Zap, ShieldAlert, Trash2, Eye, EyeOff, Pipette, Activity, ChevronDown, ChevronRight } from 'lucide-react';
 
 const SNAP_GRID = 10;
 const STUB_LENGTH = 10; // Default stub length
@@ -14,28 +14,31 @@ const StrokeWidth = 1.5;
 
 const IconAcSupply = () => (
   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className="text-red-600 mb-2">
-    <circle cx="12" cy="12" r="10" />
+    <circle cx="12" cy="12" r="9" />
     <path d="M8 12c.5-2 2-2 2.5 0s2 2 2.5 0s2-2 2.5 0" />
+    <path d="M12 3v3" strokeOpacity="0.5" />
+    <path d="M12 18v3" strokeOpacity="0.5" />
   </svg>
 );
 
 const IconNeutralBar = () => (
   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className="text-blue-600 mb-2">
     <rect x="2" y="8" width="20" height="8" rx="1" />
-    <circle cx="6" cy="12" r="0.5" fill="currentColor" />
-    <circle cx="10" cy="12" r="0.5" fill="currentColor" />
-    <circle cx="14" cy="12" r="0.5" fill="currentColor" />
-    <circle cx="18" cy="12" r="0.5" fill="currentColor" />
+    <circle cx="6" cy="12" r="1" fill="currentColor" />
+    <circle cx="10" cy="12" r="1" fill="currentColor" />
+    <circle cx="14" cy="12" r="1" fill="currentColor" />
+    <circle cx="18" cy="12" r="1" fill="currentColor" />
   </svg>
 );
 
 const IconEarthBar = () => (
    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className="text-green-600 mb-2">
     <rect x="2" y="8" width="20" height="8" rx="1" />
-    <line x1="5" y1="14" x2="7" y2="10" strokeOpacity="0.5" />
-    <line x1="9" y1="14" x2="11" y2="10" strokeOpacity="0.5" />
-    <line x1="13" y1="14" x2="15" y2="10" strokeOpacity="0.5" />
-    <line x1="17" y1="14" x2="19" y2="10" strokeOpacity="0.5" />
+    <line x1="5" y1="13" x2="5" y2="11" />
+    <line x1="9" y1="13" x2="9" y2="11" />
+    <line x1="13" y1="13" x2="13" y2="11" />
+    <line x1="17" y1="13" x2="17" y2="11" />
+    <line x1="3" y1="16" x2="21" y2="16" strokeOpacity="0.2" />
   </svg>
 );
 
@@ -43,68 +46,106 @@ const IconConsumerUnit = () => (
   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
     <rect x="3" y="4" width="18" height="16" rx="2" />
     <line x1="3" y1="9" x2="21" y2="9" />
-    <path d="M7 14v2" />
-    <path d="M11 14v2" />
-    <path d="M15 14v2" />
-    <path d="M19 14v2" />
+    <rect x="6" y="11" width="3" height="6" rx="0.5" />
+    <rect x="11" y="11" width="3" height="6" rx="0.5" />
+    <rect x="16" y="11" width="3" height="6" rx="0.5" />
   </svg>
 );
 
 const IconMCB = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
-    <path d="M8 2h8v20H8z" />
-    <path d="M12 12v4" />
-    <path d="M12 6v2" />
-    <path d="M10 10h4" />
+  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
+    <rect x="7" y="3" width="10" height="18" rx="1.5" />
+    <path d="M12 13v4" />
+    <path d="M12 7v2" />
+    <rect x="10" y="9" width="4" height="4" rx="0.5" />
   </svg>
 );
 
 const IconRCD = () => (
   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
-    <rect x="3" y="3" width="18" height="18" rx="2" />
-    <path d="M9 13v3" />
-    <path d="M15 13v3" />
-    <line x1="3" y1="9" x2="21" y2="9" />
-    <circle cx="16" cy="6" r="1.5" />
+    <rect x="4" y="3" width="16" height="18" rx="2" />
+    <line x1="12" y1="3" x2="12" y2="21" opacity="0.3" />
+    <rect x="6" y="12" width="4" height="5" rx="0.5" />
+    <rect x="14" y="12" width="4" height="5" rx="0.5" />
+    <circle cx="16" cy="7" r="1.5" />
   </svg>
 );
 
 const IconSwitch = ({ label }: { label?: string }) => (
   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
     <rect x="4" y="4" width="16" height="16" rx="2" />
-    <rect x="9" y="9" width="6" height="6" rx="1" />
-    {label && <text x="17" y="22" textAnchor="middle" fontSize="8" stroke="none" fill="currentColor" fontWeight="bold">{label}</text>}
+    <rect x="8" y="8" width="8" height="8" rx="1" />
+    <line x1="12" y1="8" x2="12" y2="16" opacity="0.3" />
+    {label && <text x="12" y="23" textAnchor="middle" fontSize="7" stroke="none" fill="currentColor" fontWeight="bold">{label}</text>}
   </svg>
 );
 
 const IconSwitchFused = () => (
   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
-    <rect x="2" y="5" width="20" height="14" rx="2" />
-    <rect x="5" y="9" width="5" height="6" rx="1" />
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <rect x="5" y="8" width="6" height="8" rx="1" />
     <rect x="14" y="9" width="4" height="6" rx="0.5" />
-    <line x1="16" y1="11" x2="16" y2="13" />
+    <line x1="16" y1="10" x2="16" y2="14" />
+  </svg>
+);
+
+const IconLampPendant = () => (
+  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className="text-yellow-600 mb-2">
+    <path d="M12 2v6" />
+    <rect x="10" y="2" width="4" height="3" fill="currentColor" fillOpacity="0.2" rx="0.5" />
+    <circle cx="12" cy="14" r="5" />
+    <path d="M12 14l-2 2" opacity="0.5" />
+    <path d="M12 14l2 2" opacity="0.5" />
   </svg>
 );
 
 const IconSocketSingle = () => (
   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
     <rect x="4" y="4" width="16" height="16" rx="2" />
-    <path d="M12 9v2" />
-    <path d="M9 14v2" />
-    <path d="M15 14v2" />
+    <path d="M12 8v3" strokeWidth="2" />
+    <circle cx="8" cy="14" r="1.5" fill="currentColor" />
+    <circle cx="16" cy="14" r="1.5" fill="currentColor" />
+    <rect x="15" y="5" width="3" height="4" rx="0.5" />
   </svg>
 );
 
 const IconSocketDouble = () => (
   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
     <rect x="2" y="6" width="20" height="12" rx="2" />
-    <path d="M7 10v1" />
-    <path d="M5 13v1" />
-    <path d="M9 13v1" />
-    <path d="M17 10v1" />
-    <path d="M15 13v1" />
-    <path d="M19 13v1" />
     <line x1="12" y1="6" x2="12" y2="18" strokeOpacity="0.2" />
+    {/* Left */}
+    <path d="M7 10v2" strokeWidth="2" />
+    <circle cx="5" cy="14" r="1" fill="currentColor" />
+    <circle cx="9" cy="14" r="1" fill="currentColor" />
+    {/* Right */}
+    <path d="M17 10v2" strokeWidth="2" />
+    <circle cx="15" cy="14" r="1" fill="currentColor" />
+    <circle cx="19" cy="14" r="1" fill="currentColor" />
+  </svg>
+);
+
+const IconFan = () => (
+  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+    <circle cx="12" cy="12" r="6" />
+    <path d="M12 12L12 8C14 8 15 9 15 10L12 12Z" />
+    <path d="M12 12L16 12C16 14 15 15 14 15L12 12Z" />
+    <path d="M12 12L12 16C10 16 9 15 9 14L12 12Z" />
+    <path d="M12 12L8 12C8 10 9 9 10 9L12 12Z" />
+  </svg>
+);
+
+const IconFanPortable = () => (
+  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
+    <circle cx="10" cy="9" r="5" />
+    <path d="M10 9v-3" />
+    <path d="M10 9h3" />
+    <path d="M10 9v3" />
+    <path d="M10 9h-3" />
+    <path d="M10 14v4" />
+    <path d="M7 18h6" />
+    <path d="M14 18c2 0 3 0 3-2s0-3 3-3" strokeDasharray="2 2" />
+    <rect x="19" y="11" width="3" height="4" rx="0.5" fill="currentColor" fillOpacity="0.2" />
   </svg>
 );
 
@@ -115,28 +156,22 @@ const IconJunctionBox = () => (
     <circle cx="16" cy="8" r="1" fill="currentColor" />
     <circle cx="16" cy="16" r="1" fill="currentColor" />
     <circle cx="8" cy="16" r="1" fill="currentColor" />
+    <path d="M12 3v2" />
+    <path d="M21 12h-2" />
+    <path d="M12 21v-2" />
+    <path d="M3 12h2" />
   </svg>
 );
 
 const IconConnector = () => (
   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
-    <rect x="3" y="9" width="18" height="6" rx="1" />
-    <line x1="6" y1="9" x2="6" y2="15" />
-    <line x1="12" y1="9" x2="12" y2="15" />
-    <line x1="18" y1="9" x2="18" y2="15" />
-    <circle cx="6" cy="12" r="0.5" fill="currentColor" />
-    <circle cx="12" cy="12" r="0.5" fill="currentColor" />
-    <circle cx="18" cy="12" r="0.5" fill="currentColor" />
+    <rect x="8" y="5" width="8" height="14" rx="1" />
+    <line x1="8" y1="9" x2="16" y2="9" />
+    <line x1="8" y1="15" x2="16" y2="15" />
+    <circle cx="12" cy="7" r="1" fill="currentColor" />
+    <circle cx="12" cy="12" r="1" fill="currentColor" />
+    <circle cx="12" cy="17" r="1" fill="currentColor" />
   </svg>
-);
-
-const IconFanPlug = () => (
-    <div className="relative mb-2">
-        <Fan className="w-8 h-8 text-slate-700" strokeWidth={1.5} />
-        <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 border border-slate-200">
-             <Plug size={12} className="text-slate-600" />
-        </div>
-    </div>
 );
 
 // Helper to generate IDs
@@ -1332,7 +1367,7 @@ export default function App() {
              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Load</h3>
              <div className="grid grid-cols-2 gap-2">
                 <button onClick={() => addComponent('LAMP_PENDANT')} className="flex flex-col items-center justify-center p-2 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
-                  <Lightbulb className="w-8 h-8 text-yellow-600 mb-2" strokeWidth={1.5} />
+                  <IconLampPendant />
                   <span className="text-xs text-center">Pendant Set (Rose)</span>
                </button>
                <button onClick={() => addComponent('SOCKET_DOUBLE')} className="flex flex-col items-center justify-center p-2 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
@@ -1344,11 +1379,11 @@ export default function App() {
                   <span className="text-xs text-center">Single Socket</span>
                </button>
                <button onClick={() => addComponent('FAN')} className="flex flex-col items-center justify-center p-2 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
-                  <Fan className="w-8 h-8 text-slate-700 mb-2" strokeWidth={1.5} />
+                  <IconFan />
                   <span className="text-xs text-center">Extractor Fan</span>
                </button>
                <button onClick={() => addComponent('FAN_PLUG')} className="flex flex-col items-center justify-center p-2 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
-                  <IconFanPlug />
+                  <IconFanPortable />
                   <span className="text-xs text-center">Portable Fan</span>
                </button>
              </div>
