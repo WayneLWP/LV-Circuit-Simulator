@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { ComponentInstance, TerminalDef } from '../types';
 import { COMPONENT_CATALOG } from '../constants';
@@ -12,7 +13,7 @@ interface Props {
   onTerminalMouseUp: (e: React.MouseEvent, termId: string) => void;   // Kept for interface compatibility, unused for interaction
   onDelete: () => void;
   onRotate: () => void;
-  onToggleState: () => void;
+  onToggleState: (subKey?: string) => void;
   showLabels: boolean;
   onDuplicate?: () => void;
   onPlugMouseDown?: (e: React.MouseEvent) => void; 
@@ -23,7 +24,13 @@ const TerminalPoint: React.FC<{
   def: TerminalDef;
 }> = ({ def }) => {
   let colorClass = 'bg-gray-400';
-  if (def.type === 'L') colorClass = 'bg-red-700';
+  if (def.type === 'L') {
+      colorClass = 'bg-red-700';
+      // Harmonized Phase Colors
+      if (def.label === 'L1') colorClass = 'bg-[#8B4513]'; // Brown
+      if (def.label === 'L2') colorClass = 'bg-black border border-gray-600';     // Black
+      if (def.label === 'L3') colorClass = 'bg-gray-500';  // Grey
+  }
   if (def.type === 'N') colorClass = 'bg-blue-600';
   if (def.type === 'E') colorClass = 'bg-green-500';
 
@@ -121,6 +128,35 @@ export const ComponentNode: React.FC<Props> = ({
              <div className={`w-4 h-8 bg-white border shadow-md transition-transform ${isOn || (data.state.position === 2) ? 'translate-y-2' : '-translate-y-2'}`}></div>
           </div>
         );
+      case 'SWITCH_ROTARY':
+        const rPos = data.state.position; // 1, 2, 3
+        const rotationMap: Record<number, number> = { 1: -50, 2: 0, 3: 50 };
+        const rotation = rotationMap[rPos] || -50;
+        
+        return (
+          <div 
+            className="w-full h-full bg-white border border-gray-300 rounded shadow-sm relative cursor-pointer"
+            onClick={(e) => { e.stopPropagation(); onToggleState(); }}
+          >
+              <div className="absolute inset-0 flex items-center justify-center">
+                  {/* Knob Body */}
+                  <div 
+                    className="w-10 h-10 rounded-full border-2 border-gray-400 bg-gray-100 shadow-sm flex items-center justify-center transition-transform duration-200"
+                    style={{ transform: `rotate(${rotation}deg)`}}
+                  >
+                      {/* Knob Indicator Line */}
+                      <div className="w-1 h-4 bg-gray-600 rounded-full absolute top-1"></div>
+                  </div>
+              </div>
+              
+              {/* Position Labels */}
+              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full pointer-events-none">
+                 <div className="absolute top-[20%] left-[25%] text-[8px] font-bold text-gray-400">1</div>
+                 <div className="absolute top-[12%] left-1/2 -translate-x-1/2 text-[8px] font-bold text-gray-400">2</div>
+                 <div className="absolute top-[20%] right-[25%] text-[8px] font-bold text-gray-400">3</div>
+              </div>
+          </div>
+        );
       case 'SWITCH_FUSED':
         return (
             <div 
@@ -144,6 +180,46 @@ export const ComponentNode: React.FC<Props> = ({
                         <div className="w-6 h-10 bg-slate-100 border border-slate-300 shadow-inner flex items-center justify-center">
                             <div className="w-3 h-6 bg-white border border-slate-300 shadow-sm"></div>
                         </div>
+                    </div>
+                </div>
+            </div>
+        );
+      case 'SWITCH_COOKER':
+        return (
+            <div className="flex w-full h-full bg-white border border-gray-400 rounded-sm shadow-sm relative select-none">
+                {/* Left Side: Socket */}
+                <div 
+                    className="w-1/2 h-full flex flex-col items-center justify-center border-r border-gray-200 relative cursor-pointer hover:bg-gray-50"
+                    onClick={(e) => { e.stopPropagation(); onToggleState('socket'); }}
+                >
+                     {/* Socket Holes */}
+                     <div className="flex flex-col items-center mt-1">
+                          <div className="w-1.5 h-3 bg-black rounded-t-sm mb-1"></div>
+                          <div className="flex gap-3">
+                            <div className="w-1.5 h-2.5 bg-black"></div>
+                            <div className="w-1.5 h-2.5 bg-black"></div>
+                          </div>
+                     </div>
+                     {/* Socket Switch */}
+                     <div className={`absolute top-4 right-4 w-2 h-3 border border-gray-500 flex flex-col ${data.state.isSocketOn ? 'bg-gray-200' : 'bg-gray-50'}`}>
+                         <div className={`h-1.5 w-full bg-gray-600 transition-transform ${data.state.isSocketOn ? 'translate-y-1.5' : 'translate-y-0'}`}></div>
+                     </div>
+                </div>
+
+                {/* Right Side: Main Switch */}
+                <div 
+                    className="w-1/2 h-full flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50"
+                    onClick={(e) => { e.stopPropagation(); onToggleState(); }}
+                >
+                    <div className="flex items-center gap-2 mb-2 w-full justify-center px-2">
+                        <span className="text-[8px] font-bold text-gray-500 tracking-widest">COOKER</span>
+                        {/* Neon */}
+                        <div className={`w-3 h-3 rounded-full border border-gray-300 ${isOn && isEnergized ? 'bg-orange-500 shadow-[0_0_6px_orange]' : 'bg-red-950'}`}></div>
+                    </div>
+
+                    {/* Rocker */}
+                    <div className={`w-12 h-8 border-2 border-red-900 rounded-md flex items-center justify-center transition-colors shadow-inner ${isOn ? 'bg-red-600' : 'bg-red-700'}`}>
+                         <div className={`w-8 h-1 bg-white opacity-40 rounded-full ${isOn ? 'opacity-80' : 'opacity-20'}`}></div>
                     </div>
                 </div>
             </div>
@@ -293,6 +369,25 @@ export const ComponentNode: React.FC<Props> = ({
             </button>
           </div>
         );
+      case 'SOURCE_3PH':
+        return (
+          <div className="flex flex-col items-center justify-center p-2 w-full h-full bg-gray-50 border-2 border-slate-700 rounded-sm">
+             <div className="flex gap-2 mb-2">
+                 {/* L1 - Brown */}
+                 <div className={`w-3 h-3 rounded-full ${isOn ? 'bg-[#8B4513] shadow-[0_0_5px_#8B4513]' : 'bg-[#3E1F08]'}`} title="L1 (Brown)"></div>
+                 {/* L2 - Black */}
+                 <div className={`w-3 h-3 rounded-full ${isOn ? 'bg-black shadow-[0_0_5px_rgba(0,0,0,0.5)] border border-gray-600' : 'bg-gray-800'}`} title="L2 (Black)"></div>
+                 {/* L3 - Grey */}
+                 <div className={`w-3 h-3 rounded-full ${isOn ? 'bg-gray-400 shadow-[0_0_5px_gray]' : 'bg-gray-600'}`} title="L3 (Grey)"></div>
+             </div>
+             <button 
+              className={`w-full px-2 py-1 text-[10px] rounded text-white font-bold border-b-2 active:border-b-0 active:mt-[2px] ${isOn ? 'bg-red-600 border-red-800' : 'bg-gray-600 border-gray-800'}`}
+              onClick={(e) => { e.stopPropagation(); onToggleState(); }}
+            >
+              {isOn ? '400V ON' : 'ISOLATED'}
+            </button>
+          </div>
+        );
       case 'CONNECTOR_BLOCK':
         return (
           <div className="w-full h-full bg-white/90 border border-gray-400 rounded-sm shadow-sm flex flex-col items-center justify-between py-1 relative overflow-hidden select-none">
@@ -308,6 +403,44 @@ export const ComponentNode: React.FC<Props> = ({
              <div className="w-2.5 h-2.5 rounded-full border border-gray-500 bg-gray-200 z-10 flex items-center justify-center shadow-sm">
                   <div className="w-1.5 h-px bg-gray-600 rotate-45"></div>
              </div>
+          </div>
+        );
+      case 'JUNCTION_BOX':
+        return (
+             <div className="w-full h-full bg-white border border-gray-400 rounded-full shadow-sm flex items-center justify-center relative">
+                 <div className="w-3/4 h-3/4 border border-gray-300 rounded-full flex items-center justify-center">
+                     <div className="w-2 h-2 rounded-full bg-gray-300"></div>
+                 </div>
+                 {/* Visual Tabs for terminals (just for show, actual terminals are overlaid) */}
+                 <div className="absolute top-2 left-1/2 -translate-x-1/2 w-3 h-3 bg-gray-200 rounded-full"></div>
+                 <div className="absolute bottom-2 left-1/2 -translate-x-1/2 w-3 h-3 bg-gray-200 rounded-full"></div>
+                 <div className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 bg-gray-200 rounded-full"></div>
+                 <div className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 bg-gray-200 rounded-full"></div>
+             </div>
+        );
+      case 'OUTLET_COOKER':
+        return (
+          <div className="w-full h-full bg-white border border-gray-300 rounded-sm shadow-sm flex flex-col items-center justify-between py-2 relative">
+             {/* Input Label */}
+             <div className="text-[6px] text-gray-400 uppercase tracking-widest mt-1">Supply In</div>
+             
+             <div className="relative w-full flex flex-col items-center">
+                 {/* Screw caps */}
+                 <div className="w-full flex justify-center gap-4 mb-1">
+                     <div className="w-2 h-2 rounded-full border border-gray-300 bg-gray-50"></div>
+                     <div className="w-2 h-2 rounded-full border border-gray-300 bg-gray-50"></div>
+                 </div>
+                 
+                 <div className="font-bold text-[8px] text-gray-600 text-center leading-tight">COOKER<br/>OUTLET</div>
+
+                 {/* Cable Exit Nose */}
+                 <div className="w-12 h-6 bg-gray-100 border border-gray-300 rounded-t-xl border-b-0 relative z-10 shadow-sm mt-2"></div>
+                 {/* Cable Stub */}
+                 <div className="w-8 h-4 bg-gray-400 rounded-b-md -mt-px z-0"></div>
+             </div>
+             
+             {/* Output Label */}
+             <div className="text-[6px] text-gray-400 uppercase tracking-widest mb-1">Load Out</div>
           </div>
         );
       case 'BAR_NEUTRAL':
@@ -385,7 +518,7 @@ export const ComponentNode: React.FC<Props> = ({
             }}
         >
             <span className="text-[10px] font-semibold text-gray-700 bg-white/90 px-1.5 py-0.5 rounded whitespace-nowrap shadow-sm border border-gray-200 backdrop-blur-sm">
-                {def.name}
+                {data.properties?.label || def.name}
             </span>
         </div>
       )}

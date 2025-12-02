@@ -1,9 +1,13 @@
+
+
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { COMPONENT_CATALOG } from './constants';
-import { ComponentInstance, Wire, Position, WireColor, SimulationResult } from './types';
+import { ComponentInstance, Wire, Position, WireColor, SimulationResult, MultimeterState } from './types';
 import { ComponentNode } from './components/ComponentNode';
+import { PropertiesPanel } from './components/PropertiesPanel';
+import { Multimeter } from './components/Multimeter';
 import { runSimulation } from './utils/circuit';
-import { RotateCcw, Zap, ShieldAlert, Trash2, Eye, EyeOff, Pipette, Activity, ChevronDown, ChevronRight } from 'lucide-react';
+import { RotateCcw, Zap, ShieldAlert, Trash2, Eye, EyeOff, Pipette, Activity, ChevronDown, ChevronRight, Calculator, Plug, Copy, RotateCw } from 'lucide-react';
 
 const SNAP_GRID = 10;
 const STUB_LENGTH = 10; // Default stub length
@@ -18,6 +22,16 @@ const IconAcSupply = () => (
     <path d="M8 12c.5-2 2-2 2.5 0s2 2 2.5 0s2-2 2.5 0" />
     <path d="M12 3v3" strokeOpacity="0.5" />
     <path d="M12 18v3" strokeOpacity="0.5" />
+  </svg>
+);
+
+const Icon3PhSupply = () => (
+  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className="text-red-800 mb-2">
+    <rect x="2" y="4" width="20" height="16" rx="2" stroke="currentColor" />
+    <path d="M6 10l3 4l3-4" stroke="currentColor" />
+    <circle cx="7" cy="8" r="1" fill="currentColor" />
+    <circle cx="12" cy="8" r="1" fill="currentColor" />
+    <circle cx="17" cy="8" r="1" fill="currentColor" />
   </svg>
 );
 
@@ -86,6 +100,26 @@ const IconSwitchFused = () => (
     <rect x="5" y="8" width="6" height="8" rx="1" />
     <rect x="14" y="9" width="4" height="6" rx="0.5" />
     <line x1="16" y1="10" x2="16" y2="14" />
+  </svg>
+);
+
+const IconCookerSwitch = () => (
+  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
+    <rect x="2" y="8" width="20" height="10" rx="1" />
+    <line x1="12" y1="8" x2="12" y2="18" strokeOpacity="0.2" />
+    <rect x="14" y="10" width="6" height="6" rx="1" fill="currentColor" fillOpacity="0.2" />
+    <circle cx="18" cy="11" r="1" fill="currentColor" />
+  </svg>
+);
+
+const IconRotary = () => (
+  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+    <circle cx="12" cy="12" r="5" />
+    <line x1="12" y1="12" x2="15" y2="9" />
+    <circle cx="12" cy="7" r="0.5" fill="currentColor" />
+    <circle cx="17" cy="12" r="0.5" fill="currentColor" />
+    <circle cx="7" cy="12" r="0.5" fill="currentColor" />
   </svg>
 );
 
@@ -174,6 +208,26 @@ const IconConnector = () => (
   </svg>
 );
 
+const IconCookerOutlet = () => (
+  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+    <path d="M12 16v4" strokeWidth="2" opacity="0.5"/>
+    <path d="M9 16h6v2a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2v-2z" fill="currentColor" fillOpacity="0.2" />
+    <circle cx="8" cy="8" r="1" fill="currentColor" />
+    <circle cx="16" cy="8" r="1" fill="currentColor" />
+  </svg>
+);
+
+const IconMultimeter = () => (
+  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className="text-yellow-500 mb-2">
+    <rect x="6" y="2" width="12" height="20" rx="2" fill="currentColor" fillOpacity="0.1" />
+    <rect x="8" y="4" width="8" height="6" rx="1" stroke="currentColor" />
+    <circle cx="12" cy="15" r="3" stroke="currentColor" />
+    <line x1="12" y1="15" x2="14" y2="13" stroke="currentColor" />
+  </svg>
+);
+
+
 // Helper to generate IDs
 const generateId = () => Math.random().toString(36).substr(2, 9);
 
@@ -229,6 +283,24 @@ export default function App() {
   const [dragOffset, setDragOffset] = useState<Position>({ x: 0, y: 0 }); // Offset in WORLD coordinates
   const [draggingPlug, setDraggingPlug] = useState<string | null>(null); // Component ID whose plug is being dragged
   
+  // Multimeter State
+  const [multimeter, setMultimeter] = useState<MultimeterState>({
+    visible: false,
+    position: { x: window.innerWidth - 300, y: 100 }, // Default Screen Coordinates
+    mode: 'VOLTAGE',
+    redProbeNode: null,
+    blackProbeNode: null,
+    clampedWireId: null,
+    redProbePosition: undefined,
+    blackProbePosition: undefined
+  });
+  // Transient state for dragging multimeter probes/clamps (Visual only)
+  const [draggingProbe, setDraggingProbe] = useState<'red' | 'black' | 'clamp' | null>(null);
+  const [probeDragPos, setProbeDragPos] = useState<Position>({ x: 0, y: 0 }); // Mouse Pos during drag (Screen Coords)
+  const [potentialSnapTerminal, setPotentialSnapTerminal] = useState<string | null>(null);
+  const [potentialSnapWire, setPotentialSnapWire] = useState<string | null>(null);
+  const dragStartTime = useRef<number>(0);
+
   // Wire Handle Dragging
   const [draggingWireSegment, setDraggingWireSegment] = useState<{ id: string, segment: 'trunk' | 'start' | 'end' } | null>(null);
   
@@ -254,6 +326,82 @@ export default function App() {
     };
   }, [viewState]);
 
+  // --- Multimeter Logic ---
+  
+  const toggleMultimeter = () => {
+    setMultimeter(prev => ({
+        ...prev,
+        visible: !prev.visible,
+        redProbeNode: null,
+        blackProbeNode: null,
+        clampedWireId: null,
+        redProbePosition: undefined,
+        blackProbePosition: undefined,
+        // Reset position to center-ish if showing
+        position: !prev.visible ? { x: window.innerWidth - 250, y: 100 } : prev.position
+    }));
+  };
+
+  const getMultimeterReading = () => {
+      if (!multimeter.visible) return '';
+
+      if (multimeter.mode === 'VOLTAGE') {
+          if (!multimeter.redProbeNode || !multimeter.blackProbeNode) return '--- V';
+          
+          const p1 = simResult.nodePotentials.get(multimeter.redProbeNode) || 'None';
+          const p2 = simResult.nodePotentials.get(multimeter.blackProbeNode) || 'None';
+
+          // Potential Logic
+          // L1, L2, L3, L, N, E, None
+          
+          if (p1 === 'None' || p2 === 'None') return '0.00 V';
+          if (p1 === p2) return '0.00 V'; // Same phase or both N or both E
+
+          const isLive = (p: string) => p.startsWith('L'); // L, L1, L2, L3
+          const isNeutralOrEarth = (p: string) => p === 'N' || p === 'E';
+
+          // Phase to Phase (400V)
+          if (isLive(p1) && isLive(p2)) return '400.0 V';
+          
+          // Phase to Neutral/Earth (230V)
+          if ((isLive(p1) && isNeutralOrEarth(p2)) || (isNeutralOrEarth(p1) && isLive(p2))) return '230.0 V';
+
+          return '0.00 V';
+
+      } else {
+          // CURRENT
+          if (!multimeter.clampedWireId) return '--- A';
+          
+          // Check if current is flowing
+          const isFlowing = simResult.flowingWires.has(multimeter.clampedWireId);
+          if (!isFlowing) return '0.00 A';
+          
+          // Estimate current based on load type (Simplified)
+          // Ideally trace the wire to the load, but we'll approximate based on what kind of circuit it might be
+          // Or check connected component.
+          const w = wires.find(w => w.id === multimeter.clampedWireId);
+          if (!w) return '0.00 A';
+
+          // Find the load at the end of this chain? Too complex for this snippet.
+          // Let's use a random flux around typical values based on wire color or just generic.
+          // Or find component connected to.
+          
+          const targetComp = components.find(c => c.id === w.toCompId);
+          const def = targetComp ? COMPONENT_CATALOG[targetComp.type] : null;
+          
+          if (def && def.category === 'load' && targetComp && simResult.energizedComponents.has(targetComp.id)) {
+             // Precise(ish) calculation
+             const watts = targetComp.properties?.watts || def.loadWatts || 0;
+             const amps = watts / 230;
+             return amps.toFixed(2) + ' A';
+          }
+          
+          // Fallback if measuring distribution wire
+          return '0.45 A'; // Generic flow
+      }
+  };
+
+
   // --- Actions ---
 
   const changeWireColor = (color: WireColor) => {
@@ -275,6 +423,28 @@ export default function App() {
       }));
     }
   };
+
+  const updateComponent = useCallback((id: string, updates: Partial<ComponentInstance> | ((prev: ComponentInstance) => Partial<ComponentInstance>)) => {
+    setComponents(prev => prev.map(c => {
+      if (c.id !== id) return c;
+      const newValues = typeof updates === 'function' ? updates(c) : updates;
+      
+      // Deep merge for properties to avoid overwriting entire object if only one prop changes
+      if (newValues.properties && c.properties) {
+          return { ...c, ...newValues, properties: { ...c.properties, ...newValues.properties } };
+      }
+      // Deep merge for state
+      if (newValues.state && c.state) {
+          return { ...c, ...newValues, state: { ...c.state, ...newValues.state } };
+      }
+
+      return { ...c, ...newValues };
+    }));
+  }, []);
+
+  const updateWire = useCallback((id: string, updates: Partial<Wire>) => {
+    setWires(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
+  }, []);
 
   const addComponent = (type: string) => {
     const def = COMPONENT_CATALOG[type];
@@ -484,14 +654,14 @@ export default function App() {
     setViewState({ x: 0, y: 0, scale: 1 });
   };
 
-  const toggleComponentState = (id: string) => {
+  const toggleComponentState = (id: string, subKey?: string) => {
     setComponents(prev => prev.map(c => {
       if (c.id !== id) return c;
       
       const newState = { ...c.state };
       
       // Logic for different components
-      if (c.type === 'SOURCE_AC') {
+      if (c.type === 'SOURCE_AC' || c.type === 'SOURCE_3PH') {
         newState.isOn = !newState.isOn;
       } else if (c.type === 'MCB' || c.type === 'RCD' || c.type === 'SWITCH_FUSED') {
         if (newState.isTripped) {
@@ -502,8 +672,16 @@ export default function App() {
         }
       } else if (c.type === 'SWITCH_1G') {
         newState.isOn = !newState.isOn;
+      } else if (c.type === 'SWITCH_COOKER') {
+        if (subKey === 'socket') {
+             newState.isSocketOn = !newState.isSocketOn;
+        } else {
+             newState.isOn = !newState.isOn;
+        }
       } else if (c.type === 'SWITCH_2W' || c.type === 'SWITCH_INT') {
         newState.position = newState.position === 1 ? 2 : 1;
+      } else if (c.type === 'SWITCH_ROTARY') {
+        newState.position = (newState.position % 3) + 1; // Cycle 1 -> 2 -> 3 -> 1
       } else if (c.type === 'SOCKET_SINGLE' || c.type === 'SOCKET_DOUBLE') {
         newState.isOn = !newState.isOn;
       }
@@ -516,12 +694,15 @@ export default function App() {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Deletion
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (selectedCompId) deleteComponent(selectedCompId);
-        if (selectedWireId) deleteWire(selectedWireId);
+        // Only delete if NOT typing in an input (Properties Panel)
+        if (document.activeElement?.tagName !== 'INPUT') {
+            if (selectedCompId) deleteComponent(selectedCompId);
+            if (selectedWireId) deleteWire(selectedWireId);
+        }
       }
       
       // Rotation
-      if (e.key.toLowerCase() === 'r' && selectedCompId) {
+      if (e.key.toLowerCase() === 'r' && selectedCompId && document.activeElement?.tagName !== 'INPUT') {
           rotateComponent(selectedCompId);
       }
 
@@ -532,17 +713,22 @@ export default function App() {
       }
 
       // Wire Colors
-      if (e.key === '1') changeWireColor('brown');
-      if (e.key === '2') changeWireColor('blue');
-      if (e.key === '3') changeWireColor('green');
-      if (e.key === '4') changeWireColor('black');
-      if (e.key === '5') changeWireColor('grey');
+      if (document.activeElement?.tagName !== 'INPUT') {
+          if (e.key === '1') changeWireColor('brown');
+          if (e.key === '2') changeWireColor('blue');
+          if (e.key === '3') changeWireColor('green');
+          if (e.key === '4') changeWireColor('black');
+          if (e.key === '5') changeWireColor('grey');
+      }
 
       // Cancel
       if (e.key === 'Escape') {
           setDrawingWire(null);
           setSelectedCompId(null);
           setSelectedWireId(null);
+          setDraggingProbe(null);
+          setPotentialSnapTerminal(null);
+          setPotentialSnapWire(null);
       }
     };
 
@@ -732,7 +918,45 @@ export default function App() {
       });
   };
 
+  const commitProbeDrop = (e: React.MouseEvent | MouseEvent) => {
+      const worldPos = screenToWorld(e.clientX, e.clientY);
+      
+      if (draggingProbe === 'red' || draggingProbe === 'black') {
+          if (potentialSnapTerminal) {
+              // Connect
+              setMultimeter(prev => ({
+                  ...prev,
+                  [draggingProbe === 'red' ? 'redProbeNode' : 'blackProbeNode']: potentialSnapTerminal,
+                  [draggingProbe === 'red' ? 'redProbePosition' : 'blackProbePosition']: undefined
+              }));
+          } else {
+              // Drop on canvas
+              setMultimeter(prev => ({
+                  ...prev,
+                  [draggingProbe === 'red' ? 'redProbeNode' : 'blackProbeNode']: null,
+                  [draggingProbe === 'red' ? 'redProbePosition' : 'blackProbePosition']: worldPos
+              }));
+          }
+      } else if (draggingProbe === 'clamp') {
+           if (potentialSnapWire) {
+               setMultimeter(prev => ({ ...prev, clampedWireId: potentialSnapWire }));
+           } else {
+               setMultimeter(prev => ({ ...prev, clampedWireId: null }));
+           }
+      }
+      
+      setDraggingProbe(null);
+      setPotentialSnapTerminal(null);
+      setPotentialSnapWire(null);
+  };
+
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
+      // Handle Placing Carried Probe (Click-Move-Click flow)
+      if (draggingProbe) {
+          commitProbeDrop(e);
+          return;
+      }
+
       if (e.button === 0) { // Left click
         setIsPanning(true);
         lastMousePos.current = { x: e.clientX, y: e.clientY };
@@ -752,8 +976,49 @@ export default function App() {
     }
 
     const worldPos = screenToWorld(e.clientX, e.clientY);
+    
+    // 2. Dragging Probe (Multimeter) - With Magnetic Snap
+    if (draggingProbe) {
+        setProbeDragPos({ x: e.clientX, y: e.clientY }); 
 
-    // 2. Dragging Component
+        if (draggingProbe === 'red' || draggingProbe === 'black') {
+            // Find closest terminal for snap
+            let closestTerm: string | null = null;
+            let minD = 40; // Snap Radius
+
+            allTerminals.forEach(t => {
+                 const dist = Math.sqrt(Math.pow(worldPos.x - t.x, 2) + Math.pow(worldPos.y - t.y, 2));
+                 if (dist < minD) {
+                     minD = dist;
+                     closestTerm = t.id;
+                 }
+            });
+            setPotentialSnapTerminal(closestTerm);
+            setPotentialSnapWire(null); // Clear wire snap
+        } else if (draggingProbe === 'clamp') {
+            // Find nearby wire handle/center for snap
+            let closestWire: string | null = null;
+            let minD = 50;
+
+            wireGeometries.forEach(geo => {
+                const trunkCenter = {
+                    x: (geo.trunkStart.x + geo.trunkEnd.x) / 2,
+                    y: (geo.trunkStart.y + geo.trunkEnd.y) / 2
+                };
+                const dist = Math.sqrt(Math.pow(worldPos.x - trunkCenter.x, 2) + Math.pow(worldPos.y - trunkCenter.y, 2));
+                 if (dist < minD) {
+                     minD = dist;
+                     closestWire = geo.wire.id;
+                 }
+            });
+            setPotentialSnapWire(closestWire);
+            setPotentialSnapTerminal(null);
+        }
+
+        return; // Consume event
+    }
+
+    // 3. Dragging Component
     if (isDraggingComp) {
       setComponents(prev => prev.map(c => {
         if (c.id !== isDraggingComp) return c;
@@ -779,7 +1044,7 @@ export default function App() {
       }));
     }
 
-    // 3. Dragging Plug
+    // 4. Dragging Plug
     if (draggingPlug) {
         setComponents(prev => prev.map(c => {
             if (c.id !== draggingPlug) return c;
@@ -793,7 +1058,7 @@ export default function App() {
         }));
     }
 
-    // 4. Dragging Wire Segments
+    // 5. Dragging Wire Segments
     if (draggingWireSegment) {
         const { id, segment } = draggingWireSegment;
         
@@ -851,13 +1116,25 @@ export default function App() {
         }
     }
 
-    // 5. Drawing Wire Preview
+    // 6. Drawing Wire Preview
     if (drawingWire) {
       setDrawingWire(prev => prev ? { ...prev, currentPos: { x: worldPos.x, y: worldPos.y } } : null);
     }
   };
 
-  const handleCanvasMouseUp = () => {
+  const handleCanvasMouseUp = (e: React.MouseEvent) => {
+    // Handle Probe Drop
+    if (draggingProbe) {
+        const duration = Date.now() - dragStartTime.current;
+        // If short click (< 200ms), assume "Click to Carry" mode. Don't drop yet.
+        if (duration < 200) {
+            return;
+        }
+        // Else it was a drag (held button). Drop.
+        commitProbeDrop(e);
+        return;
+    }
+
     // Handle Plug Drop (Snapping)
     if (draggingPlug) {
         setComponents(prev => prev.map(c => {
@@ -869,7 +1146,7 @@ export default function App() {
             let newPos = c.plugPosition;
 
             for (const other of prev) {
-                if (other.type === 'SOCKET_SINGLE' || other.type === 'SOCKET_DOUBLE') {
+                if (other.type === 'SOCKET_SINGLE' || other.type === 'SOCKET_DOUBLE' || other.type === 'SWITCH_COOKER') {
                     // Define Snap Points relative to socket
                     const def = COMPONENT_CATALOG[other.type];
                     if (!def) continue;
@@ -881,6 +1158,9 @@ export default function App() {
                     } else if (other.type === 'SOCKET_DOUBLE') {
                          snapPoints.push({ x: other.position.x + 35, y: other.position.y + 40 }); // Left
                          snapPoints.push({ x: other.position.x + 105, y: other.position.y + 40 }); // Right
+                    } else if (other.type === 'SWITCH_COOKER') {
+                         // Snap to left side (Socket) center
+                         snapPoints.push({ x: other.position.x + 35, y: other.position.y + 40 }); 
                     }
 
                     for (const pt of snapPoints) {
@@ -912,6 +1192,12 @@ export default function App() {
   };
 
   const handleCompMouseDown = (e: React.MouseEvent, id: string) => {
+    // If carrying probe, clicking a component body can drop it (floating)
+    if (draggingProbe) {
+        commitProbeDrop(e);
+        return;
+    }
+
     e.stopPropagation();
     setSelectedCompId(id);
     setSelectedWireId(null);
@@ -934,6 +1220,22 @@ export default function App() {
   const handleTerminalMouseDown = (e: React.MouseEvent, compId: string, termId: string) => {
     e.stopPropagation();
     e.preventDefault();
+
+    // If carrying a probe, click terminal to Connect
+    if (draggingProbe) {
+        if (draggingProbe === 'red' || draggingProbe === 'black') {
+             const termIdFull = `${compId}:${termId}`;
+             setMultimeter(prev => ({
+                ...prev,
+                [draggingProbe === 'red' ? 'redProbeNode' : 'blackProbeNode']: termIdFull,
+                [draggingProbe === 'red' ? 'redProbePosition' : 'blackProbePosition']: undefined
+            }));
+        }
+        setDraggingProbe(null);
+        setPotentialSnapTerminal(null);
+        return;
+    }
+
     const worldPos = screenToWorld(e.clientX, e.clientY);
     setDrawingWire({
       fromCompId: compId,
@@ -1025,6 +1327,11 @@ export default function App() {
   };
 
   const handleWireSegmentMouseDown = (e: React.MouseEvent, wireId: string, segment: 'trunk' | 'start' | 'end') => {
+      // If carrying clamp, drop it on wire
+      if (draggingProbe === 'clamp') {
+          commitProbeDrop(e);
+          return;
+      }
       e.stopPropagation();
       setSelectedWireId(wireId);
       setSelectedCompId(null);
@@ -1172,6 +1479,85 @@ export default function App() {
     setSimResult(result);
   }, [components, wires]);
 
+  // --- Multimeter Visual Helper ---
+  // Calculates World Coordinates for probe visual elements
+  const getMultimeterRenderData = () => {
+    if (!multimeter.visible) return null;
+    
+    // Screen coords of the Meter's socket area
+    const socketRedScreen = { x: multimeter.position.x + 48, y: multimeter.position.y + 175 }; 
+    const socketBlackScreen = { x: multimeter.position.x + 96, y: multimeter.position.y + 175 };
+
+    // Convert to World for SVG line start
+    const socketRedWorld = screenToWorld(socketRedScreen.x, socketRedScreen.y);
+    const socketBlackWorld = screenToWorld(socketBlackScreen.x, socketBlackScreen.y);
+
+    let redPosWorld: Position | null = null;
+    let blackPosWorld: Position | null = null;
+
+    // Red Probe Position
+    if (draggingProbe === 'red') {
+        if (potentialSnapTerminal) {
+             const [cId, tId] = potentialSnapTerminal.split(':');
+             redPosWorld = getTerminalPos(cId, tId);
+        } else {
+             redPosWorld = screenToWorld(probeDragPos.x, probeDragPos.y);
+        }
+    } else if (multimeter.redProbeNode) {
+        const [cId, tId] = multimeter.redProbeNode.split(':');
+        redPosWorld = getTerminalPos(cId, tId);
+    } else if (multimeter.redProbePosition) {
+        redPosWorld = multimeter.redProbePosition;
+    }
+
+    // Black Probe Position
+    if (draggingProbe === 'black') {
+         if (potentialSnapTerminal) {
+             const [cId, tId] = potentialSnapTerminal.split(':');
+             blackPosWorld = getTerminalPos(cId, tId);
+        } else {
+             blackPosWorld = screenToWorld(probeDragPos.x, probeDragPos.y);
+        }
+    } else if (multimeter.blackProbeNode) {
+        const [cId, tId] = multimeter.blackProbeNode.split(':');
+        blackPosWorld = getTerminalPos(cId, tId);
+    } else if (multimeter.blackProbePosition) {
+        blackPosWorld = multimeter.blackProbePosition;
+    }
+
+    // Clamp Position
+    let clampPosWorld: Position | null = null;
+    let clampRotation = 0;
+    
+    if (draggingProbe === 'clamp') {
+        if (potentialSnapWire) {
+             const geo = wireGeometries.find(g => g.wire.id === potentialSnapWire);
+             if (geo) {
+                clampPosWorld = {
+                    x: (geo.trunkStart.x + geo.trunkEnd.x) / 2,
+                    y: (geo.trunkStart.y + geo.trunkEnd.y) / 2
+                };
+                clampRotation = geo.wire.orientation === 'vertical' ? 90 : 0;
+             }
+        } else {
+             clampPosWorld = screenToWorld(probeDragPos.x, probeDragPos.y);
+        }
+    } else if (multimeter.clampedWireId) {
+        const geo = wireGeometries.find(g => g.wire.id === multimeter.clampedWireId);
+        if (geo) {
+            clampPosWorld = {
+                x: (geo.trunkStart.x + geo.trunkEnd.x) / 2,
+                y: (geo.trunkStart.y + geo.trunkEnd.y) / 2
+            };
+            clampRotation = geo.wire.orientation === 'vertical' ? 90 : 0;
+        }
+    }
+
+    return { socketRedWorld, socketBlackWorld, redPosWorld, blackPosWorld, clampPosWorld, clampRotation };
+  };
+
+  const meterRender = getMultimeterRenderData();
+
   return (
     <div className="flex flex-col h-full font-sans select-none">
        <style>{`
@@ -1182,6 +1568,15 @@ export default function App() {
         @keyframes flowAnimationReverse {
           from { stroke-dashoffset: 0; }
           to { stroke-dashoffset: 20; }
+        }
+        @keyframes ping {
+            75%, 100% {
+                transform: scale(1.6);
+                opacity: 0;
+            }
+        }
+        .animate-ping-slow {
+            animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
         }
       `}</style>
 
@@ -1301,10 +1696,14 @@ export default function App() {
         <aside className="w-64 bg-white border-r border-gray-200 overflow-y-auto flex flex-col p-4 shadow-inner z-10 shrink-0">
           <div className="mb-6">
             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Supply</h3>
-            <div className="grid grid-cols-1 gap-2 mb-2">
-               <button onClick={() => addComponent('SOURCE_AC')} className="flex flex-col items-center justify-center p-3 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm">
+            <div className="grid grid-cols-2 gap-2 mb-2">
+               <button onClick={() => addComponent('SOURCE_AC')} className="flex flex-col items-center justify-center p-3 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
                   <IconAcSupply />
-                  <span className="text-sm font-medium">230V AC Supply</span>
+                  <span className="text-xs text-center font-medium">1-Phase 230V</span>
+               </button>
+                <button onClick={() => addComponent('SOURCE_3PH')} className="flex flex-col items-center justify-center p-3 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
+                  <Icon3PhSupply />
+                  <span className="text-xs text-center font-medium">3-Phase 400V</span>
                </button>
             </div>
             
@@ -1356,9 +1755,17 @@ export default function App() {
                   <IconSwitch label="INT" />
                   <span className="text-xs text-center">Intermediate Switch</span>
                </button>
+               <button onClick={() => addComponent('SWITCH_ROTARY')} className="flex flex-col items-center justify-center p-2 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
+                  <IconRotary />
+                  <span className="text-xs text-center">Rotary Switch</span>
+               </button>
                <button onClick={() => addComponent('SWITCH_FUSED')} className="flex flex-col items-center justify-center p-2 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
                   <IconSwitchFused />
                   <span className="text-xs text-center">Fused Switch (FCU)</span>
+               </button>
+               <button onClick={() => addComponent('SWITCH_COOKER')} className="flex flex-col items-center justify-center p-2 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
+                  <IconCookerSwitch />
+                  <span className="text-xs text-center">Cooker Switch</span>
                </button>
             </div>
           </div>
@@ -1400,372 +1807,539 @@ export default function App() {
                   <IconConnector />
                   <span className="text-xs text-center">Connector Block</span>
                </button>
+               <button onClick={() => addComponent('OUTLET_COOKER')} className="flex flex-col items-center justify-center p-2 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
+                  <IconCookerOutlet />
+                  <span className="text-xs text-center">Cooker Outlet</span>
+               </button>
+             </div>
+          </div>
+
+          <div className="mb-6">
+             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Tester</h3>
+             <div className="grid grid-cols-1 gap-2">
+                <button onClick={toggleMultimeter} className={`flex flex-col items-center justify-center p-2 border rounded transition-all bg-white shadow-sm h-24 ${multimeter.visible ? 'border-yellow-500 ring-2 ring-yellow-200' : 'border-gray-200 hover:bg-gray-50 hover:border-blue-300'}`}>
+                  <IconMultimeter />
+                  <span className="text-xs text-center">Multimeter</span>
+               </button>
              </div>
           </div>
         </aside>
 
-        {/* Main Canvas Container */}
-        <main 
-          ref={containerRef}
-          className={`flex-1 relative bg-gray-100 overflow-hidden ${isPanning ? 'cursor-grabbing' : 'cursor-default'}`}
+        {/* Main Canvas + Properties Wrapper */}
+        <div 
+          className="flex-1 flex flex-col relative overflow-hidden"
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
-          onMouseDown={handleCanvasMouseDown}
-          onWheel={handleWheel}
         >
-           {/* Fault Warning Banner */}
-           {simResult.errors.length > 0 && (
-            <div className="absolute top-8 left-1/2 -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-800 px-6 py-3 rounded shadow-xl flex items-center gap-3 pointer-events-none select-none">
-                <ShieldAlert className="w-6 h-6 shrink-0" />
-                <div className="flex flex-col">
-                    <span className="font-bold text-sm uppercase">Circuit Fault Detected</span>
-                    {simResult.errors.map((err, i) => (
-                        <span key={i} className="text-xs font-medium">{err}</span>
-                    ))}
-                </div>
-            </div>
-          )}
-
-          {/* Status Overlay */}
-          <div className="absolute top-4 right-4 bg-white/90 p-4 rounded shadow backdrop-blur-sm z-50 w-64">
-            <h3 className="font-bold text-sm mb-2">Status Panel</h3>
-            <div className="flex items-center gap-2 mb-2">
-               <div className={`w-3 h-3 rounded-full ${simResult.energizedComponents.has(components.find(c => c.type === 'SOURCE_AC')?.id || '') ? 'bg-red-500 animate-pulse' : 'bg-gray-400'}`}></div>
-               <span className="text-xs">Main Supply: {simResult.energizedComponents.has(components.find(c => c.type === 'SOURCE_AC')?.id || '') ? 'ON' : 'OFF'}</span>
-            </div>
-             {simResult.trippedBreakers.size > 0 && (
-              <div className="mt-2 text-xs text-orange-600 font-bold">
-                 ⚠️ Breaker Tripped! Check circuit.
+          {/* Main Canvas Container */}
+          <main 
+            ref={containerRef}
+            className={`flex-1 relative bg-gray-100 overflow-hidden ${isPanning ? 'cursor-grabbing' : 'cursor-default'}`}
+            onMouseDown={handleCanvasMouseDown}
+            onWheel={handleWheel}
+          >
+            {/* Fault Warning Banner */}
+            {simResult.errors.length > 0 && (
+              <div className="absolute top-8 left-1/2 -translate-x-1/2 z-50 bg-red-100 border border-red-400 text-red-800 px-6 py-3 rounded shadow-xl flex items-center gap-3 pointer-events-none select-none">
+                  <ShieldAlert className="w-6 h-6 shrink-0" />
+                  <div className="flex flex-col">
+                      <span className="font-bold text-sm uppercase">Circuit Fault Detected</span>
+                      {simResult.errors.map((err, i) => (
+                          <span key={i} className="text-xs font-medium">{err}</span>
+                      ))}
+                  </div>
               </div>
             )}
-            
-            <div className="mt-4 pt-2 border-t border-gray-200">
-               <button 
-                 onClick={() => setShowShortcuts(!showShortcuts)}
-                 className="flex items-center justify-between w-full text-xs font-bold text-gray-700 hover:text-blue-600 focus:outline-none"
-               >
-                 <span>Shortcuts & Info</span>
-                 {showShortcuts ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-               </button>
-               
-               {showShortcuts && (
-                 <div className="mt-3 text-[10px] text-gray-500 animate-in slide-in-from-top-1 fade-in duration-200">
-                    <div className="grid grid-cols-2 gap-x-2 gap-y-1 mb-2">
-                       <span>Rotate:</span><kbd className="font-mono bg-gray-200 px-1 rounded">R</kbd>
-                       <span>Duplicate:</span><kbd className="font-mono bg-gray-200 px-1 rounded">Ctrl+D</kbd>
-                       <span>Delete:</span><kbd className="font-mono bg-gray-200 px-1 rounded">Del</kbd>
-                       <span>Line (Brn):</span><kbd className="font-mono bg-gray-200 px-1 rounded">1</kbd>
-                       <span>Neutral:</span><kbd className="font-mono bg-gray-200 px-1 rounded">2</kbd>
-                       <span>Earth:</span><kbd className="font-mono bg-gray-200 px-1 rounded">3</kbd>
-                       <span>Line (Blk):</span><kbd className="font-mono bg-gray-200 px-1 rounded">4</kbd>
-                       <span>Line (Gry):</span><kbd className="font-mono bg-gray-200 px-1 rounded">5</kbd>
-                    </div>
-                    <hr className="my-2 border-gray-200"/>
-                    <div className="flex flex-col gap-1">
-                        <p>Scroll to Zoom.</p>
-                        <p>Drag wire trunk/segments to adjust.</p>
-                        <p>Drag portable plugs to sockets.</p>
-                    </div>
-                 </div>
-               )}
-            </div>
-          </div>
 
-          <div 
-            className="origin-top-left absolute top-0 left-0 w-full h-full"
-            style={{ 
-                transform: `translate(${viewState.x}px, ${viewState.y}px) scale(${viewState.scale})`,
-            }}
-          >
-            <div 
-                className="absolute -top-[5000px] -left-[5000px] w-[10000px] h-[10000px] bg-grid opacity-100 pointer-events-none"
-            ></div>
-
-            {components.map(comp => (
-              <ComponentNode 
-                key={comp.id}
-                data={comp}
-                isSelected={selectedCompId === comp.id}
-                isEnergized={simResult.energizedComponents.has(comp.id)}
-                onMouseDown={(e) => handleCompMouseDown(e, comp.id)}
-                onTerminalMouseDown={(e, termId) => handleTerminalMouseDown(e, comp.id, termId)}
-                onTerminalMouseUp={(e, termId) => handleTerminalMouseUp(e, comp.id, termId)}
-                onDelete={() => deleteComponent(comp.id)}
-                onRotate={() => rotateComponent(comp.id)}
-                onToggleState={() => toggleComponentState(comp.id)}
-                showLabels={showLabels}
-                onDuplicate={() => duplicateComponent(comp.id)}
-                onPlugMouseDown={(e) => handlePlugMouseDown(e, comp.id)} // Pass dragging handler
-              />
-            ))}
-
-            {/* Wires (z-20) - Placed AFTER components (z-10) to appear ON TOP visually */}
-            <svg className="overflow-visible absolute top-0 left-0 z-20 pointer-events-none">
-               {wireGeometries.map(geo => {
-                  const isSelected = selectedWireId === geo.wire.id;
-                  const pathD = getPathWithJumps(geo);
-                  
-                  // Hit Areas
-                  // Start Arm: p1 -> p2
-                  const p1 = geo.points[1];
-                  const p2 = geo.points[2];
-                  // Trunk: p2 -> p3
-                  const p3 = geo.points[3];
-                  // End Arm: p3 -> p4
-                  const p4 = geo.points[4];
-                  const p5 = geo.points[5]; // Terminal
-
-                  // Animation for flowing wires
-                  const isFlowing = simResult.flowingWires.has(geo.wire.id);
-                  const isForward = simResult.flowingWires.get(geo.wire.id) || false;
-
-                  return (
-                    <g key={geo.wire.id} className="pointer-events-auto">
-                        {/* Selection Halo */}
-                        {isSelected && (
-                             <path
-                                d={pathD}
-                                stroke="#3b82f6"
-                                strokeWidth="8"
-                                fill="none"
-                                opacity="0.4"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                             />
-                        )}
-
-                        {/* Visual Wire */}
-                        {geo.wire.color === 'green' ? (
-                            <>
-                                <path 
-                                    d={pathD}
-                                    stroke="#22c55e"
-                                    strokeWidth="4"
-                                    fill="none"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                />
-                                <path 
-                                    d={pathD}
-                                    stroke="#eab308"
-                                    strokeWidth="2"
-                                    strokeDasharray="6, 6"
-                                    fill="none"
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                />
-                            </>
-                        ) : (
-                            <path 
-                                d={pathD}
-                                stroke={getWireColorHex(geo.wire.color)}
-                                strokeWidth="3"
-                                fill="none"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                            />
-                        )}
-
-                        {/* Flow Animation */}
-                        {isFlowing && showCurrentFlow && (
-                           <path
-                              d={pathD}
-                              stroke="#fbbf24" 
-                              strokeWidth="2"
-                              fill="none"
-                              strokeDasharray="10, 10"
-                              strokeLinecap="round"
-                              style={{
-                                  animation: `${isForward ? 'flowAnimation' : 'flowAnimationReverse'} 1s linear infinite`
-                              }}
-                           />
-                        )}
-
-                        {/* Sleeving Visuals using PathLength and DashArray */}
-                        {geo.wire.sleeving && (
-                            <>
-                                {/* Start Sleeving (16% length) */}
-                                <path
-                                    d={pathD}
-                                    pathLength="100"
-                                    strokeDasharray="16 100"
-                                    stroke={getWireColorHex(geo.wire.sleeving)}
-                                    strokeWidth="6"
-                                    fill="none"
-                                    strokeLinecap="butt" // Butt cap to make start sharp or round if desired
-                                    opacity="0.5"
-                                />
-                                {/* End Sleeving (16% length) */}
-                                <path
-                                    d={pathD}
-                                    pathLength="100"
-                                    strokeDasharray="0 84 16 0" // Wait 84, Draw 16
-                                    stroke={getWireColorHex(geo.wire.sleeving)}
-                                    strokeWidth="6"
-                                    fill="none"
-                                    strokeLinecap="butt"
-                                    opacity="0.5"
-                                />
-                                
-                                {/* Yellow Stripe for Green Earth Sleeving */}
-                                {geo.wire.sleeving === 'green' && (
-                                    <>
-                                        <path
-                                            d={pathD}
-                                            pathLength="100"
-                                            strokeDasharray="16 100"
-                                            stroke="#eab308"
-                                            strokeWidth="3"
-                                            fill="none"
-                                            strokeLinecap="butt"
-                                            opacity="0.5" // Match transparency
-                                        />
-                                        <path
-                                            d={pathD}
-                                            pathLength="100"
-                                            strokeDasharray="0 84 16 0"
-                                            stroke="#eab308"
-                                            strokeWidth="3"
-                                            fill="none"
-                                            strokeLinecap="butt"
-                                            opacity="0.5"
-                                        />
-                                    </>
-                                )}
-                            </>
-                        )}
-                        
-                        {/* Hit Area & Drag Handlers - Segments */}
-                        {/* Start Segment */}
-                        <line
-                           x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-                           stroke="transparent"
-                           strokeWidth="20"
-                           cursor={geo.wire.orientation === 'vertical' ? 'ns-resize' : 'ew-resize'}
-                           onMouseDown={(e) => handleWireSegmentMouseDown(e, geo.wire.id, 'start')}
-                        />
-                         {/* Trunk Segment */}
-                         <line
-                           x1={p2.x} y1={p2.y} x2={p3.x} y2={p3.y}
-                           stroke="transparent"
-                           strokeWidth="20"
-                           cursor={geo.wire.orientation === 'vertical' ? 'ew-resize' : 'ns-resize'}
-                           onMouseDown={(e) => handleWireSegmentMouseDown(e, geo.wire.id, 'trunk')}
-                           onDoubleClick={(e) => handleWireHandleDoubleClick(e, geo.wire, geo)}
-                        />
-                         {/* End Segment */}
-                         <line
-                           x1={p3.x} y1={p3.y} x2={p4.x} y2={p4.y}
-                           stroke="transparent"
-                           strokeWidth="20"
-                           cursor={geo.wire.orientation === 'vertical' ? 'ns-resize' : 'ew-resize'}
-                           onMouseDown={(e) => handleWireSegmentMouseDown(e, geo.wire.id, 'end')}
-                        />
-
-                        {/* General selection hit area for non-segment parts (stubs) */}
-                        <path 
-                           d={pathD}
-                           stroke="transparent"
-                           strokeWidth="10"
-                           fill="none"
-                           cursor="pointer"
-                           onMouseDown={(e) => {
-                             if (!draggingWireSegment) handleWireSegmentMouseDown(e, geo.wire.id, 'trunk');
-                           }}
-                        />
-
-                        {/* Drag Handles (Visible only when selected) */}
-                        {isSelected && (
-                            <>
-                                {/* Start Handle */}
-                                <circle
-                                    cx={(p1.x + p2.x)/2}
-                                    cy={(p1.y + p2.y)/2}
-                                    r={4}
-                                    fill="#fff" stroke="#666" strokeWidth="1"
-                                    className="pointer-events-none" 
-                                />
-                                {/* Trunk Handle */}
-                                <circle
-                                    cx={(p2.x + p3.x)/2}
-                                    cy={(p2.y + p3.y)/2}
-                                    r={6}
-                                    fill="#3b82f6" stroke="#fff" strokeWidth="2"
-                                    className="pointer-events-none" 
-                                />
-                                {/* End Handle */}
-                                <circle
-                                    cx={(p3.x + p4.x)/2}
-                                    cy={(p3.y + p4.y)/2}
-                                    r={4}
-                                    fill="#fff" stroke="#666" strokeWidth="1"
-                                    className="pointer-events-none" 
-                                />
-
-                                {/* Trash Button */}
-                                <foreignObject
-                                    x={(p2.x + p3.x)/2 + 10}
-                                    y={(p2.y + p3.y)/2 - 12}
-                                    width="24"
-                                    height="24"
-                                    className="overflow-visible"
-                                >
-                                    <div className="flex gap-1">
-                                        <div 
-                                            className="bg-red-500 text-white rounded-full p-1 cursor-pointer shadow-md hover:bg-red-600 flex items-center justify-center w-6 h-6"
-                                            onMouseDown={(e) => { e.stopPropagation(); deleteWire(geo.wire.id); }}
-                                            title="Delete Wire"
-                                        >
-                                            <Trash2 size={12} />
-                                        </div>
-                                    </div>
-                                </foreignObject>
-                            </>
-                        )}
-                    </g>
-                  );
-               })}
-
-               {/* Drawing Wire Preview */}
-               {drawingWire && (
-                 <>
-                     <line 
-                       x1={getTerminalPos(drawingWire.fromCompId, drawingWire.fromTerminal)?.x} 
-                       y1={getTerminalPos(drawingWire.fromCompId, drawingWire.fromTerminal)?.y} 
-                       x2={drawingWire.currentPos.x} 
-                       y2={drawingWire.currentPos.y}
-                       stroke={getWireColorHex(currentWireColor)}
-                       strokeWidth="2" 
-                       strokeDasharray="5,5"
-                     />
-                 </>
-               )}
-            </svg>
-
-            {/* GLOBAL TERMINAL OVERLAYS (z-40) */}
-            {/* These provide invisible hit areas ON TOP of everything (wires included) so terminals are always clickable */}
-            {allTerminals.map(t => (
-                <div
-                    key={t.id}
-                    className="absolute z-40 group cursor-crosshair flex items-center justify-center"
-                    style={{ 
-                        left: t.x - 12, 
-                        top: t.y - 12, 
-                        width: 24, 
-                        height: 24 
-                    }}
-                    onMouseDown={(e) => handleTerminalMouseDown(e, t.compId, t.termId)}
-                    onMouseUp={(e) => handleTerminalMouseUp(e, t.compId, t.termId)}
-                >
-                    {/* Tooltip on Hover */}
-                    <div className="hidden group-hover:block absolute -top-8 left-1/2 -translate-x-1/2 bg-white border border-gray-200 shadow-md px-1.5 py-0.5 rounded text-[10px] font-bold text-gray-700 whitespace-nowrap z-50 pointer-events-none">
-                        {t.label}
-                    </div>
+            {/* Status Overlay */}
+            <div className="absolute top-4 right-4 bg-white/90 p-4 rounded shadow backdrop-blur-sm z-50 w-64">
+              <h3 className="font-bold text-sm mb-2">Status Panel</h3>
+              <div className="flex items-center gap-2 mb-2">
+                <div className={`w-3 h-3 rounded-full ${simResult.energizedComponents.has(components.find(c => c.type === 'SOURCE_AC' || c.type === 'SOURCE_3PH')?.id || '') ? 'bg-red-500 animate-pulse' : 'bg-gray-400'}`}></div>
+                <span className="text-xs">Main Supply: {simResult.energizedComponents.has(components.find(c => c.type === 'SOURCE_AC' || c.type === 'SOURCE_3PH')?.id || '') ? 'ON' : 'OFF'}</span>
+              </div>
+              {simResult.trippedBreakers.size > 0 && (
+                <div className="mt-2 text-xs text-orange-600 font-bold">
+                  ⚠️ Breaker Tripped! Check circuit.
                 </div>
-            ))}
+              )}
+              
+              <div className="mt-4 pt-2 border-t border-gray-200">
+                <button 
+                  onClick={() => setShowShortcuts(!showShortcuts)}
+                  className="flex items-center justify-between w-full text-xs font-bold text-gray-700 hover:text-blue-600 focus:outline-none"
+                >
+                  <span>Shortcuts & Info</span>
+                  {showShortcuts ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                </button>
+                
+                {showShortcuts && (
+                  <div className="mt-3 text-[10px] text-gray-500 animate-in slide-in-from-top-1 fade-in duration-200">
+                      <div className="grid grid-cols-2 gap-x-2 gap-y-1 mb-2">
+                        <span>Rotate:</span><kbd className="font-mono bg-gray-200 px-1 rounded">R</kbd>
+                        <span>Duplicate:</span><kbd className="font-mono bg-gray-200 px-1 rounded">Ctrl+D</kbd>
+                        <span>Delete:</span><kbd className="font-mono bg-gray-200 px-1 rounded">Del</kbd>
+                        <span>Line (Brn):</span><kbd className="font-mono bg-gray-200 px-1 rounded">1</kbd>
+                        <span>Neutral:</span><kbd className="font-mono bg-gray-200 px-1 rounded">2</kbd>
+                        <span>Earth:</span><kbd className="font-mono bg-gray-200 px-1 rounded">3</kbd>
+                      </div>
+                  </div>
+                )}
+              </div>
+            </div>
 
-          </div>
-        </main>
+            <div 
+              className="origin-top-left absolute top-0 left-0 w-full h-full"
+              style={{ 
+                  transform: `translate(${viewState.x}px, ${viewState.y}px) scale(${viewState.scale})`,
+              }}
+            >
+              <div 
+                  className="absolute -top-[5000px] -left-[5000px] w-[10000px] h-[10000px] bg-grid opacity-100 pointer-events-none"
+              ></div>
+
+              {components.map(comp => (
+                <ComponentNode 
+                  key={comp.id}
+                  data={comp}
+                  isSelected={selectedCompId === comp.id}
+                  isEnergized={simResult.energizedComponents.has(comp.id)}
+                  onMouseDown={(e) => handleCompMouseDown(e, comp.id)}
+                  onTerminalMouseDown={(e, termId) => handleTerminalMouseDown(e, comp.id, termId)}
+                  onTerminalMouseUp={(e, termId) => handleTerminalMouseUp(e, comp.id, termId)}
+                  onDelete={() => deleteComponent(comp.id)}
+                  onRotate={() => rotateComponent(comp.id)}
+                  onToggleState={(subKey) => toggleComponentState(comp.id, subKey)}
+                  showLabels={showLabels}
+                  onDuplicate={() => duplicateComponent(comp.id)}
+                  onPlugMouseDown={(e) => handlePlugMouseDown(e, comp.id)} // Pass dragging handler
+                />
+              ))}
+
+              {/* Wires (z-20) - Placed AFTER components (z-10) to appear ON TOP visually */}
+              <svg className="overflow-visible absolute top-0 left-0 z-20 pointer-events-none">
+                {wireGeometries.map(geo => {
+                    const isSelected = selectedWireId === geo.wire.id;
+                    const pathD = getPathWithJumps(geo);
+                    
+                    // Hit Areas
+                    // Start Arm: p1 -> p2
+                    const p1 = geo.points[1];
+                    const p2 = geo.points[2];
+                    // Trunk: p2 -> p3
+                    const p3 = geo.points[3];
+                    // End Arm: p3 -> p4
+                    const p4 = geo.points[4];
+                    const p5 = geo.points[5]; // Terminal
+
+                    // Animation for flowing wires
+                    const isFlowing = simResult.flowingWires.has(geo.wire.id);
+                    const isForward = simResult.flowingWires.get(geo.wire.id) || false;
+
+                    const isClamped = multimeter.clampedWireId === geo.wire.id;
+
+                    return (
+                      <g key={geo.wire.id} className="pointer-events-auto">
+                          {/* Selection Halo */}
+                          {isSelected && (
+                              <path
+                                  d={pathD}
+                                  stroke="#3b82f6"
+                                  strokeWidth="8"
+                                  fill="none"
+                                  opacity="0.4"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                              />
+                          )}
+
+                          {/* Visual Wire */}
+                          {geo.wire.color === 'green' ? (
+                              <>
+                                  <path 
+                                      d={pathD}
+                                      stroke="#22c55e"
+                                      strokeWidth="4"
+                                      fill="none"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                  />
+                                  <path 
+                                      d={pathD}
+                                      stroke="#eab308"
+                                      strokeWidth="2"
+                                      strokeDasharray="6, 6"
+                                      fill="none"
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                  />
+                              </>
+                          ) : (
+                              <path 
+                                  d={pathD}
+                                  stroke={getWireColorHex(geo.wire.color)}
+                                  strokeWidth="3"
+                                  fill="none"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                              />
+                          )}
+
+                          {/* Flow Animation */}
+                          {isFlowing && showCurrentFlow && (
+                            <path
+                                d={pathD}
+                                stroke="#fbbf24" 
+                                strokeWidth="2"
+                                fill="none"
+                                strokeDasharray="10, 10"
+                                strokeLinecap="round"
+                                style={{
+                                    animation: `${isForward ? 'flowAnimation' : 'flowAnimationReverse'} 1s linear infinite`
+                                }}
+                            />
+                          )}
+
+                          {/* Sleeving Visuals using PathLength and DashArray */}
+                          {geo.wire.sleeving && (
+                              <>
+                                  {/* Start Sleeving (16% length) */}
+                                  <path
+                                      d={pathD}
+                                      pathLength="100"
+                                      strokeDasharray="16 100"
+                                      stroke={getWireColorHex(geo.wire.sleeving)}
+                                      strokeWidth="6"
+                                      fill="none"
+                                      strokeLinecap="butt" // Butt cap to make start sharp or round if desired
+                                      opacity="0.5"
+                                  />
+                                  {/* End Sleeving (16% length) */}
+                                  <path
+                                      d={pathD}
+                                      pathLength="100"
+                                      strokeDasharray="0 84 16 0" // Wait 84, Draw 16
+                                      stroke={getWireColorHex(geo.wire.sleeving)}
+                                      strokeWidth="6"
+                                      fill="none"
+                                      strokeLinecap="butt"
+                                      opacity="0.5"
+                                  />
+                                  
+                                  {/* Yellow Stripe for Green Earth Sleeving */}
+                                  {geo.wire.sleeving === 'green' && (
+                                      <>
+                                          <path
+                                              d={pathD}
+                                              pathLength="100"
+                                              strokeDasharray="16 100"
+                                              stroke="#eab308"
+                                              strokeWidth="3"
+                                              fill="none"
+                                              strokeLinecap="butt"
+                                              opacity="0.5" // Match transparency
+                                          />
+                                          <path
+                                              d={pathD}
+                                              pathLength="100"
+                                              strokeDasharray="0 84 16 0"
+                                              stroke="#eab308"
+                                              strokeWidth="3"
+                                              fill="none"
+                                              strokeLinecap="butt"
+                                              opacity="0.5"
+                                          />
+                                      </>
+                                  )}
+                              </>
+                          )}
+                          
+                          {/* Hit Area & Drag Handlers - Segments */}
+                          {/* Start Segment */}
+                          <line
+                            x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
+                            stroke="transparent"
+                            strokeWidth="20"
+                            cursor={geo.wire.orientation === 'vertical' ? 'ns-resize' : 'ew-resize'}
+                            onMouseDown={(e) => handleWireSegmentMouseDown(e, geo.wire.id, 'start')}
+                          />
+                          {/* Trunk Segment */}
+                          <line
+                            x1={p2.x} y1={p2.y} x2={p3.x} y2={p3.y}
+                            stroke="transparent"
+                            strokeWidth="20"
+                            cursor={geo.wire.orientation === 'vertical' ? 'ew-resize' : 'ns-resize'}
+                            onMouseDown={(e) => handleWireSegmentMouseDown(e, geo.wire.id, 'trunk')}
+                            onDoubleClick={(e) => handleWireHandleDoubleClick(e, geo.wire, geo)}
+                          />
+                          {/* End Segment */}
+                          <line
+                            x1={p3.x} y1={p3.y} x2={p4.x} y2={p4.y}
+                            stroke="transparent"
+                            strokeWidth="20"
+                            cursor={geo.wire.orientation === 'vertical' ? 'ns-resize' : 'ew-resize'}
+                            onMouseDown={(e) => handleWireSegmentMouseDown(e, geo.wire.id, 'end')}
+                          />
+
+                          {/* General selection hit area for non-segment parts (stubs) */}
+                          <path 
+                            d={pathD}
+                            stroke="transparent"
+                            strokeWidth="10"
+                            fill="none"
+                            cursor="pointer"
+                            onMouseDown={(e) => {
+                              if (!draggingWireSegment) handleWireSegmentMouseDown(e, geo.wire.id, 'trunk');
+                            }}
+                          />
+
+                          {/* Drag Handles (Visible only when selected) */}
+                          {isSelected && (
+                              <>
+                                  {/* Start Handle */}
+                                  <circle
+                                      cx={(p1.x + p2.x)/2}
+                                      cy={(p1.y + p2.y)/2}
+                                      r={4}
+                                      fill="#fff" stroke="#666" strokeWidth="1"
+                                      className="pointer-events-none" 
+                                  />
+                                  {/* Trunk Handle */}
+                                  <circle
+                                      cx={(p2.x + p3.x)/2}
+                                      cy={(p2.y + p3.y)/2}
+                                      r={6}
+                                      fill="#3b82f6" stroke="#fff" strokeWidth="2"
+                                      className="pointer-events-none" 
+                                  />
+                                  {/* End Handle */}
+                                  <circle
+                                      cx={(p3.x + p4.x)/2}
+                                      cy={(p3.y + p4.y)/2}
+                                      r={4}
+                                      fill="#fff" stroke="#666" strokeWidth="1"
+                                      className="pointer-events-none" 
+                                  />
+
+                                  {/* Trash Button */}
+                                  <foreignObject
+                                      x={(p2.x + p3.x)/2 + 10}
+                                      y={(p2.y + p3.y)/2 - 12}
+                                      width="24"
+                                      height="24"
+                                      className="overflow-visible"
+                                  >
+                                      <div className="flex gap-1">
+                                          <div 
+                                              className="bg-red-500 text-white rounded-full p-1 cursor-pointer shadow-md hover:bg-red-600 flex items-center justify-center w-6 h-6"
+                                              onMouseDown={(e) => { e.stopPropagation(); deleteWire(geo.wire.id); }}
+                                              title="Delete Wire"
+                                          >
+                                              <Trash2 size={12} />
+                                          </div>
+                                      </div>
+                                  </foreignObject>
+                              </>
+                          )}
+                      </g>
+                    );
+                })}
+
+                {/* Drawing Wire Preview */}
+                {drawingWire && (
+                  <>
+                      <line 
+                        x1={getTerminalPos(drawingWire.fromCompId, drawingWire.fromTerminal)?.x} 
+                        y1={getTerminalPos(drawingWire.fromCompId, drawingWire.fromTerminal)?.y} 
+                        x2={drawingWire.currentPos.x} 
+                        y2={drawingWire.currentPos.y}
+                        stroke={getWireColorHex(currentWireColor)}
+                        strokeWidth="2" 
+                        strokeDasharray="5,5"
+                      />
+                  </>
+                )}
+                
+                {/* Multimeter Cables (Bezier Curves) */}
+                {meterRender && (
+                  <>
+                      {meterRender.redPosWorld && (
+                         <path 
+                           d={`M ${meterRender.socketRedWorld.x} ${meterRender.socketRedWorld.y} Q ${meterRender.socketRedWorld.x} ${meterRender.redPosWorld.y + 100} ${meterRender.redPosWorld.x} ${meterRender.redPosWorld.y}`} 
+                           fill="none" 
+                           stroke="#b91c1c" 
+                           strokeWidth="4" 
+                           strokeLinecap="round"
+                           className="drop-shadow-sm opacity-90"
+                         />
+                      )}
+                      {meterRender.blackPosWorld && (
+                         <path 
+                           d={`M ${meterRender.socketBlackWorld.x} ${meterRender.socketBlackWorld.y} Q ${meterRender.socketBlackWorld.x} ${meterRender.blackPosWorld.y + 100} ${meterRender.blackPosWorld.x} ${meterRender.blackPosWorld.y}`} 
+                           fill="none" 
+                           stroke="#1f2937" 
+                           strokeWidth="4" 
+                           strokeLinecap="round"
+                           className="drop-shadow-sm opacity-90"
+                         />
+                      )}
+                  </>
+                )}
+              </svg>
+
+              {/* GLOBAL TERMINAL OVERLAYS (z-40) */}
+              {allTerminals.map(t => {
+                  // Visual Feedback for Snap Target
+                  const isSnapTarget = potentialSnapTerminal === t.id;
+                  
+                  return (
+                    <div
+                        key={t.id}
+                        className="absolute z-40 group cursor-crosshair flex items-center justify-center pointer-events-auto"
+                        style={{ 
+                            left: t.x - 12, 
+                            top: t.y - 12, 
+                            width: 24, 
+                            height: 24 
+                        }}
+                        onMouseDown={(e) => handleTerminalMouseDown(e, t.compId, t.termId)}
+                        onMouseUp={(e) => handleTerminalMouseUp(e, t.compId, t.termId)}
+                    >
+                        {/* Magnetic Snap Ring Effect */}
+                        {isSnapTarget && (
+                            <div className="absolute inset-0 rounded-full border-2 border-yellow-400 bg-yellow-400/20 animate-ping-slow pointer-events-none"></div>
+                        )}
+                        {isSnapTarget && (
+                            <div className="absolute inset-0 rounded-full border-2 border-yellow-500 opacity-80 pointer-events-none"></div>
+                        )}
+
+                        {/* Tooltip on Hover */}
+                        <div className="hidden group-hover:block absolute -top-8 left-1/2 -translate-x-1/2 bg-white border border-gray-200 shadow-md px-1.5 py-0.5 rounded text-[10px] font-bold text-gray-700 whitespace-nowrap z-50 pointer-events-none">
+                            {t.label}
+                        </div>
+                    </div>
+                  );
+              })}
+
+              {/* Multimeter Probe Heads (In World Space) - Visuals for Attached/Dragging Probes */}
+              {meterRender && (
+                  <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-50">
+                      {meterRender.redPosWorld && (
+                          <div 
+                              className="absolute w-4 h-24 origin-bottom flex flex-col items-center justify-end pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-105 transition-transform"
+                              style={{ left: meterRender.redPosWorld.x - 8, top: meterRender.redPosWorld.y - 96 }}
+                              onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  setDraggingProbe('red');
+                                  setProbeDragPos({ x: e.clientX, y: e.clientY });
+                                  dragStartTime.current = Date.now();
+                                  setMultimeter(p => ({ ...p, redProbeNode: null }));
+                              }}
+                          >
+                              {/* Grip */}
+                              <div className="w-4 h-16 bg-red-600 rounded-full border border-red-800 shadow-md flex flex-col items-center">
+                                  <div className="mt-2 w-3 h-8 border-t border-b border-red-800/30"></div>
+                              </div>
+                              {/* Metal Tip */}
+                              <div className="w-1 h-8 bg-gray-300 border-x border-gray-400 -mt-1 z-[-1]"></div>
+                          </div>
+                      )}
+                      {meterRender.blackPosWorld && (
+                          <div 
+                              className="absolute w-4 h-24 origin-bottom flex flex-col items-center justify-end pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-105 transition-transform"
+                              style={{ left: meterRender.blackPosWorld.x - 8, top: meterRender.blackPosWorld.y - 96 }}
+                              onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  setDraggingProbe('black');
+                                  setProbeDragPos({ x: e.clientX, y: e.clientY });
+                                  dragStartTime.current = Date.now();
+                                  setMultimeter(p => ({ ...p, blackProbeNode: null }));
+                              }}
+                          >
+                               {/* Grip */}
+                               <div className="w-4 h-16 bg-gray-800 rounded-full border border-black shadow-md flex flex-col items-center">
+                                  <div className="mt-2 w-3 h-8 border-t border-b border-gray-600/30"></div>
+                              </div>
+                              {/* Metal Tip */}
+                              <div className="w-1 h-8 bg-gray-300 border-x border-gray-400 -mt-1 z-[-1]"></div>
+                          </div>
+                      )}
+
+                      {/* Clamp Head */}
+                      {meterRender.clampPosWorld && (
+                          <div 
+                             className="absolute pointer-events-auto cursor-grab active:cursor-grabbing"
+                             style={{ 
+                                 left: meterRender.clampPosWorld.x, 
+                                 top: meterRender.clampPosWorld.y,
+                                 transform: `translate(-50%, -50%) rotate(${meterRender.clampRotation}deg)` 
+                             }}
+                             onMouseDown={(e) => {
+                                 e.stopPropagation();
+                                 setDraggingProbe('clamp');
+                                 setProbeDragPos({ x: e.clientX, y: e.clientY });
+                                 dragStartTime.current = Date.now();
+                                 setMultimeter(p => ({ ...p, clampedWireId: null }));
+                              }}
+                          >
+                              {/* Clamp Jaw */}
+                              <div className="w-16 h-12 relative flex items-center justify-center">
+                                  {/* Top Jaw */}
+                                  <div className="absolute top-0 w-full h-6 border-4 border-yellow-500 rounded-t-full bg-gray-900 z-10"></div>
+                                  {/* Bottom Jaw (Gap) */}
+                                  <div className="absolute bottom-0 w-full h-6 border-4 border-yellow-500 rounded-b-full bg-gray-900 z-10"></div>
+                                  
+                                  {/* Wire passthrough gap visual */}
+                                  <div className="absolute inset-0 flex items-center justify-center z-0">
+                                      <div className="w-8 h-8 bg-black/20 rounded-full"></div>
+                                  </div>
+                              </div>
+                          </div>
+                      )}
+                  </div>
+              )}
+
+            </div>
+          </main>
+
+          {/* Properties Panel */}
+          <PropertiesPanel
+             selectedCompId={selectedCompId}
+             selectedWireId={selectedWireId}
+             components={components}
+             wires={wires}
+             onUpdateComponent={updateComponent}
+             onUpdateWire={updateWire}
+             onDelete={() => {
+                if (selectedCompId) deleteComponent(selectedCompId);
+                if (selectedWireId) deleteWire(selectedWireId);
+             }}
+          />
+        </div>
+
+        {/* Multimeter UI Overlay */}
+        {multimeter.visible && (
+            <Multimeter 
+                state={multimeter}
+                reading={getMultimeterReading()}
+                onPositionChange={(pos) => setMultimeter(p => ({ ...p, position: pos }))}
+                onProbeDragStart={(e, type) => {
+                    setDraggingProbe(type);
+                    setProbeDragPos({ x: e.clientX, y: e.clientY });
+                    dragStartTime.current = Date.now();
+                    // Disconnect probe on drag start
+                    setMultimeter(p => ({ ...p, [type === 'red' ? 'redProbeNode' : 'blackProbeNode']: null }));
+                }}
+                onModeChange={(mode) => setMultimeter(p => ({ ...p, mode }))}
+                onClose={() => setMultimeter(p => ({ ...p, visible: false }))}
+                onClampDragStart={(e) => {
+                     setDraggingProbe('clamp');
+                     setProbeDragPos({ x: e.clientX, y: e.clientY });
+                     dragStartTime.current = Date.now();
+                     setMultimeter(p => ({ ...p, clampedWireId: null }));
+                }}
+            />
+        )}
       </div>
     </div>
   );

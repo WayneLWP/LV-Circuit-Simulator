@@ -1,4 +1,5 @@
 
+
 export type WireColor = 'brown' | 'blue' | 'green' | 'black' | 'grey';
 
 export interface Position {
@@ -6,7 +7,7 @@ export interface Position {
   y: number;
 }
 
-export type ComponentCategory = 'supply' | 'protection' | 'control' | 'load' | 'connection';
+export type ComponentCategory = 'supply' | 'protection' | 'control' | 'load' | 'connection' | 'tester';
 
 export interface TerminalDef {
   id: string;
@@ -44,6 +45,14 @@ export interface ComponentInstance {
   // For portable devices with a plug
   plugPosition?: Position; 
   pluggedSocketId?: string; // ID of the socket this device is plugged into
+  
+  // Instance specific properties (User overrides)
+  properties?: {
+    label?: string; // Custom Name
+    rating?: number; // Override Amps
+    watts?: number; // Override Watts
+    [key: string]: any;
+  };
 }
 
 export interface Wire {
@@ -69,12 +78,16 @@ export interface SimulationResult {
   trippedBreakers: Set<string>; // IDs of breakers that tripped
   errors: string[];
   flowingWires: Map<string, boolean>; // Wire ID -> direction
-  nodePotentials: Map<string, 'L' | 'N' | 'E' | 'None'>; // Map of NodeId -> Potential Type (for Multimeter)
+  nodePotentials: Map<string, string>; // Map of NodeId -> Potential Type ('L1','L2','L3','L','N','E')
 }
 
 export interface MultimeterState {
   visible: boolean;
-  redProbe: { compId: string; termId: string } | null;
-  blackProbe: { compId: string; termId: string } | null;
   position: Position;
+  mode: 'VOLTAGE' | 'CURRENT';
+  redProbeNode: string | null; // NodeID (compId:termId)
+  blackProbeNode: string | null; // NodeID
+  clampedWireId: string | null; // WireID
+  redProbePosition?: Position; // World Coordinates if placed freely
+  blackProbePosition?: Position; // World Coordinates if placed freely
 }

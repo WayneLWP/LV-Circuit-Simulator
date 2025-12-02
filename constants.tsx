@@ -1,3 +1,4 @@
+
 import { ComponentDef, TerminalDef } from './types';
 
 // --- Terminal Layout Helpers ---
@@ -18,6 +19,21 @@ export const COMPONENT_CATALOG: Record<string, ComponentDef> = {
     ],
     initialState: { isOn: false },
     // Internal: The source doesn't connect terminals together, it provides potential.
+  },
+  SOURCE_3PH: {
+    type: 'SOURCE_3PH',
+    name: '3-Phase Supply (400V)',
+    category: 'supply',
+    width: 140,
+    height: 100,
+    terminals: [
+      { id: 'L1', label: 'L1', x: 20, y: 80, type: 'L' },
+      { id: 'L2', label: 'L2', x: 45, y: 80, type: 'L' },
+      { id: 'L3', label: 'L3', x: 70, y: 80, type: 'L' },
+      { id: 'N', label: 'N', x: 95, y: 80, type: 'N' },
+      { id: 'E', label: 'E', x: 120, y: 80, type: 'E' },
+    ],
+    initialState: { isOn: false },
   },
   MCB: {
     type: 'MCB',
@@ -96,6 +112,27 @@ export const COMPONENT_CATALOG: Record<string, ComponentDef> = {
       ? [['L1', 'L3'], ['L2', 'L4']] 
       : [['L1', 'L4'], ['L2', 'L3']],
   },
+  SWITCH_ROTARY: {
+    type: 'SWITCH_ROTARY',
+    name: 'Rotary Switch (3-Pos)',
+    category: 'control',
+    width: 80,
+    height: 80,
+    terminals: [
+      { id: 'COM', label: 'COM', x: 40, y: 15, type: 'Generic' },
+      { id: 'L1', label: '1', x: 20, y: 65, type: 'Generic' },
+      { id: 'L2', label: '2', x: 40, y: 65, type: 'Generic' },
+      { id: 'L3', label: '3', x: 60, y: 65, type: 'Generic' },
+      { id: 'E', label: 'E', x: 75, y: 75, type: 'E' },
+    ],
+    initialState: { position: 1 }, // 1, 2, 3
+    getInternalConnections: (state) => {
+        if (state.position === 1) return [['COM', 'L1']];
+        if (state.position === 2) return [['COM', 'L2']];
+        if (state.position === 3) return [['COM', 'L3']];
+        return [];
+    },
+  },
   SWITCH_FUSED: {
     type: 'SWITCH_FUSED',
     name: 'Fused Switch (FCU)',
@@ -112,6 +149,25 @@ export const COMPONENT_CATALOG: Record<string, ComponentDef> = {
     initialState: { isOn: false },
     getInternalConnections: (state) => state.isOn ? [['L_IN', 'L_OUT'], ['N_IN', 'N_OUT']] : [],
     rating: 13, // 13A Fuse
+  },
+  SWITCH_COOKER: {
+    type: 'SWITCH_COOKER',
+    name: 'Cooker Control Unit',
+    category: 'control',
+    width: 140, // Horizontal unit, matching double socket
+    height: 80,
+    terminals: [
+      // Terminals concentrated on the right (Switch side)
+      { id: 'L_IN', label: 'L In', x: 90, y: 10, type: 'L' },
+      { id: 'N_IN', label: 'N In', x: 120, y: 10, type: 'N' },
+      { id: 'L_OUT', label: 'L Out', x: 90, y: 70, type: 'L' },
+      { id: 'N_OUT', label: 'N Out', x: 120, y: 70, type: 'N' },
+      { id: 'E', label: 'E', x: 70, y: 70, type: 'E' },
+    ],
+    // isOn controls main switch, isSocketOn controls the socket
+    initialState: { isOn: false, isSocketOn: false },
+    getInternalConnections: (state) => state.isOn ? [['L_IN', 'L_OUT'], ['N_IN', 'N_OUT']] : [],
+    rating: 45, // 45A Isolator
   },
   LAMP_PENDANT: {
     type: 'LAMP_PENDANT',
@@ -204,6 +260,26 @@ export const COMPONENT_CATALOG: Record<string, ComponentDef> = {
     ],
     initialState: {},
     getInternalConnections: () => [], 
+  },
+  OUTLET_COOKER: {
+    type: 'OUTLET_COOKER',
+    name: 'Cooker Outlet Plate',
+    category: 'connection',
+    width: 80,
+    height: 100, // Increased height for top/bottom separation
+    terminals: [
+        // Input Terminals (Top)
+        { id: 'L_IN', label: 'L In', x: 20, y: 10, type: 'L' },
+        { id: 'E_IN', label: 'E In', x: 40, y: 10, type: 'E' },
+        { id: 'N_IN', label: 'N In', x: 60, y: 10, type: 'N' },
+        
+        // Output Terminals (Bottom)
+        { id: 'L_OUT', label: 'L Out', x: 20, y: 90, type: 'L' },
+        { id: 'E_OUT', label: 'E Out', x: 40, y: 90, type: 'E' },
+        { id: 'N_OUT', label: 'N Out', x: 60, y: 90, type: 'N' },
+    ],
+    initialState: {},
+    getInternalConnections: () => [['L_IN', 'L_OUT'], ['N_IN', 'N_OUT'], ['E_IN', 'E_OUT']],
   },
   CONNECTOR_BLOCK: {
     type: 'CONNECTOR_BLOCK',
