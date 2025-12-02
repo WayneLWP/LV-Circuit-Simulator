@@ -262,7 +262,7 @@ export default function App() {
   const [viewState, setViewState] = useState({ x: 0, y: 0, scale: 1 });
   const [isPanning, setIsPanning] = useState(false);
   const lastMousePos = useRef({ x: 0, y: 0 }); // Track raw mouse for panning
-  const [showLabels, setShowLabels] = useState(true);
+  const [showLabels, setShowLabels] = useState(false);
   const [showCurrentFlow, setShowCurrentFlow] = useState(true);
   
   // UI State
