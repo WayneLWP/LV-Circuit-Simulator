@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './LV-Circuit-Simulator-main/App';
+import App from './App';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
