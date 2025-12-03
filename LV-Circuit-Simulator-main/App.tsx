@@ -581,8 +581,8 @@ export default function App() {
       // Check probes connection
       if (!megger.redProbeNode || !megger.blackProbeNode) {
            if (megger.mode === 'CONTINUITY') return '> 99 Ω';
-           if (megger.mode === 'IR_250') return '> 999 MΩ';
-           if (megger.mode === 'IR_500') return '> 999 MΩ';
+           if (megger.mode === 'IR_250') return '> 200 MΩ';
+           if (megger.mode === 'IR_500') return '> 500 MΩ';
            if (megger.mode === 'IR_1000') return '> 999 MΩ';
            return '> 999 MΩ';
       }
