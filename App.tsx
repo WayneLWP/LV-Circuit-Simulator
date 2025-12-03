@@ -1,5 +1,4 @@
 
-
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { COMPONENT_CATALOG } from './constants';
 import { ComponentInstance, Wire, Position, WireColor, SimulationResult, MultimeterState } from './types';
@@ -7,7 +6,7 @@ import { ComponentNode } from './components/ComponentNode';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { Multimeter } from './components/Multimeter';
 import { runSimulation } from './utils/circuit';
-import { RotateCcw, Zap, ShieldAlert, Trash2, Eye, EyeOff, Pipette, Activity, ChevronDown, ChevronRight, Calculator, Plug, Copy, RotateCw } from 'lucide-react';
+import { RotateCcw, Zap, ShieldAlert, Trash2, Eye, EyeOff, Pipette, Activity, ChevronDown, ChevronRight, Calculator, Plug, Copy, RotateCw, PenTool } from 'lucide-react';
 
 const SNAP_GRID = 10;
 const STUB_LENGTH = 10; // Default stub length
@@ -243,6 +242,55 @@ const getWireColorHex = (color: WireColor) => {
   }
 };
 
+// --- Collision Detection Helpers ---
+
+const getVisualRect = (comp: ComponentInstance) => {
+  const def = COMPONENT_CATALOG[comp.type];
+  if (!def) return { x: 0, y: 0, w: 0, h: 0 };
+  
+  // Visual center is always position + width/2, height/2 (relative to unrotated)
+  // Because transform-origin is center center.
+  const cx = comp.position.x + def.width / 2;
+  const cy = comp.position.y + def.height / 2;
+  
+  const isRotated = (comp.rotation % 180) === 90;
+  const w = isRotated ? def.height : def.width;
+  const h = isRotated ? def.width : def.height;
+  
+  return {
+    x: cx - w / 2,
+    y: cy - h / 2,
+    w,
+    h
+  };
+};
+
+const isOverlapping = (r1: {x:number, y:number, w:number, h:number}, r2: {x:number, y:number, w:number, h:number}) => {
+   const buffer = 0; 
+   return r1.x < r2.x + r2.w - buffer &&
+          r1.x + r1.w > r2.x + buffer &&
+          r1.y < r2.y + r2.h - buffer &&
+          r1.y + r1.h > r2.y + buffer;
+};
+
+// Helper: Get closest point on segment p1-p2
+function getClosestPointOnSegment(p: Position, a: Position, b: Position) {
+  const atob = { x: b.x - a.x, y: b.y - a.y };
+  const atop = { x: p.x - a.x, y: p.y - a.y };
+  const lenSq = atob.x * atob.x + atob.y * atob.y;
+  let t = 0;
+  if (lenSq > 0) {
+      t = (atop.x * atob.x + atop.y * atob.y) / lenSq;
+  }
+  // Clamp t
+  t = Math.max(0, Math.min(1, t));
+  const closest = {
+      x: a.x + t * atob.x,
+      y: a.y + t * atob.y
+  };
+  return closest;
+}
+
 interface WireGeometry {
   wire: Wire;
   points: Position[];
@@ -263,6 +311,7 @@ export default function App() {
   const [isPanning, setIsPanning] = useState(false);
   const lastMousePos = useRef({ x: 0, y: 0 }); // Track raw mouse for panning
   const [showLabels, setShowLabels] = useState(false);
+  const [showSymbols, setShowSymbols] = useState(false); // New state for symbols
   const [showCurrentFlow, setShowCurrentFlow] = useState(true);
   
   // UI State
@@ -292,13 +341,16 @@ export default function App() {
     blackProbeNode: null,
     clampedWireId: null,
     redProbePosition: undefined,
-    blackProbePosition: undefined
+    blackProbePosition: undefined,
+    clampPosition: undefined,
+    clampRotation: undefined
   });
   // Transient state for dragging multimeter probes/clamps (Visual only)
   const [draggingProbe, setDraggingProbe] = useState<'red' | 'black' | 'clamp' | null>(null);
   const [probeDragPos, setProbeDragPos] = useState<Position>({ x: 0, y: 0 }); // Mouse Pos during drag (Screen Coords)
   const [potentialSnapTerminal, setPotentialSnapTerminal] = useState<string | null>(null);
   const [potentialSnapWire, setPotentialSnapWire] = useState<string | null>(null);
+  const [potentialSnapClamp, setPotentialSnapClamp] = useState<{ position: Position, rotation: number } | null>(null);
   const dragStartTime = useRef<number>(0);
 
   // Wire Handle Dragging
@@ -337,6 +389,8 @@ export default function App() {
         clampedWireId: null,
         redProbePosition: undefined,
         blackProbePosition: undefined,
+        clampPosition: undefined,
+        clampRotation: undefined,
         // Reset position to center-ish if showing
         position: !prev.visible ? { x: window.innerWidth - 250, y: 100 } : prev.position
     }));
@@ -460,10 +514,33 @@ export default function App() {
         centerY = worldCenter.y;
     }
 
-    const pos = { 
+    let pos = { 
         x: Math.round(centerX / SNAP_GRID) * SNAP_GRID, 
         y: Math.round(centerY / SNAP_GRID) * SNAP_GRID 
     };
+
+    // Find non-overlapping position
+    let angle = 0;
+    let radius = 0;
+    let attempts = 0;
+    
+    while(attempts < 100) {
+       const tempComp = { 
+           id: 'temp', type, position: pos, rotation: 0, state: {} 
+       } as ComponentInstance;
+       
+       const r1 = getVisualRect(tempComp);
+       const collision = components.some(other => isOverlapping(r1, getVisualRect(other)));
+       
+       if (!collision) break;
+
+       // Spiral out
+       radius += 20; 
+       angle += Math.PI / 4; 
+       pos.x = Math.round((centerX + Math.cos(angle) * radius) / SNAP_GRID) * SNAP_GRID;
+       pos.y = Math.round((centerY + Math.sin(angle) * radius) / SNAP_GRID) * SNAP_GRID;
+       attempts++;
+    }
 
     const newComp: ComponentInstance = {
       id: generateId(),
@@ -605,10 +682,32 @@ export default function App() {
      const original = components.find(c => c.id === id);
      if (!original) return;
 
-     const newPos = {
+     let newPos = {
          x: original.position.x + 20,
          y: original.position.y + 20
      };
+     
+     // Find non-overlapping
+     let angle = 0;
+     let radius = 0;
+     let attempts = 0;
+     
+     while(attempts < 100) {
+        const tempComp = { 
+            id: 'temp', type: original.type, position: newPos, rotation: original.rotation, state: {} 
+        } as ComponentInstance;
+        
+        const r1 = getVisualRect(tempComp);
+        const collision = components.some(other => isOverlapping(r1, getVisualRect(other)));
+        
+        if (!collision) break;
+
+        radius += 20; 
+        angle += Math.PI / 4; 
+        newPos.x = Math.round((original.position.x + Math.cos(angle) * radius) / SNAP_GRID) * SNAP_GRID;
+        newPos.y = Math.round((original.position.y + Math.sin(angle) * radius) / SNAP_GRID) * SNAP_GRID;
+        attempts++;
+     }
 
      const newComp: ComponentInstance = {
          ...original,
@@ -626,11 +725,22 @@ export default function App() {
   }, [components]);
 
   const rotateComponent = useCallback((id: string) => {
-    setComponents(prev => prev.map(c => {
-      if (c.id !== id) return c;
-      if (c.type === 'FAN_PLUG') return c; // Don't rotate Fan Plug container
-      return { ...c, rotation: (c.rotation + 90) % 360 };
-    }));
+    setComponents(prev => {
+        const c = prev.find(comp => comp.id === id);
+        if (!c) return prev;
+        if (c.type === 'FAN_PLUG') return prev; 
+        
+        const newRotation = (c.rotation + 90) % 360;
+        const temp = { ...c, rotation: newRotation };
+        
+        // Check collision
+        const r1 = getVisualRect(temp);
+        const collision = prev.some(other => other.id !== id && isOverlapping(r1, getVisualRect(other)));
+        
+        if (collision) return prev; // Block rotation
+
+        return prev.map(comp => comp.id === id ? { ...comp, rotation: newRotation } : comp);
+    });
   }, []);
 
   const deleteWire = useCallback((id: string) => {
@@ -680,6 +790,14 @@ export default function App() {
         }
       } else if (c.type === 'SWITCH_2W' || c.type === 'SWITCH_INT') {
         newState.position = newState.position === 1 ? 2 : 1;
+      } else if (c.type === 'SWITCH_2G_2W') {
+        // Toggle individual switches based on subKey
+        if (subKey === 'sw2') {
+             newState.sw2 = newState.sw2 === 1 ? 2 : 1;
+        } else {
+             // Default to sw1
+             newState.sw1 = newState.sw1 === 1 ? 2 : 1;
+        }
       } else if (c.type === 'SWITCH_ROTARY') {
         newState.position = (newState.position % 3) + 1; // Cycle 1 -> 2 -> 3 -> 1
       } else if (c.type === 'SOCKET_SINGLE' || c.type === 'SOCKET_DOUBLE') {
@@ -729,6 +847,7 @@ export default function App() {
           setDraggingProbe(null);
           setPotentialSnapTerminal(null);
           setPotentialSnapWire(null);
+          setPotentialSnapClamp(null);
       }
     };
 
@@ -938,16 +1057,22 @@ export default function App() {
               }));
           }
       } else if (draggingProbe === 'clamp') {
-           if (potentialSnapWire) {
-               setMultimeter(prev => ({ ...prev, clampedWireId: potentialSnapWire }));
+           if (potentialSnapWire && potentialSnapClamp) {
+               setMultimeter(prev => ({ 
+                   ...prev, 
+                   clampedWireId: potentialSnapWire,
+                   clampPosition: potentialSnapClamp.position,
+                   clampRotation: potentialSnapClamp.rotation
+               }));
            } else {
-               setMultimeter(prev => ({ ...prev, clampedWireId: null }));
+               setMultimeter(prev => ({ ...prev, clampedWireId: null, clampPosition: undefined, clampRotation: undefined }));
            }
       }
       
       setDraggingProbe(null);
       setPotentialSnapTerminal(null);
       setPotentialSnapWire(null);
+      setPotentialSnapClamp(null);
   };
 
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
@@ -996,49 +1121,89 @@ export default function App() {
             setPotentialSnapTerminal(closestTerm);
             setPotentialSnapWire(null); // Clear wire snap
         } else if (draggingProbe === 'clamp') {
-            // Find nearby wire handle/center for snap
-            let closestWire: string | null = null;
-            let minD = 50;
+            // Find closest wire segment
+            let bestWireId: string | null = null;
+            let bestPos: Position | null = null;
+            let bestRot = 0;
+            let minD = 40; // Snap threshold
 
             wireGeometries.forEach(geo => {
-                const trunkCenter = {
-                    x: (geo.trunkStart.x + geo.trunkEnd.x) / 2,
-                    y: (geo.trunkStart.y + geo.trunkEnd.y) / 2
-                };
-                const dist = Math.sqrt(Math.pow(worldPos.x - trunkCenter.x, 2) + Math.pow(worldPos.y - trunkCenter.y, 2));
-                 if (dist < minD) {
-                     minD = dist;
-                     closestWire = geo.wire.id;
-                 }
+                const points = geo.points;
+                for (let i = 0; i < points.length - 1; i++) {
+                    const p1 = points[i];
+                    const p2 = points[i+1];
+                    const closest = getClosestPointOnSegment(worldPos, p1, p2);
+                    const dist = Math.sqrt(Math.pow(worldPos.x - closest.x, 2) + Math.pow(worldPos.y - closest.y, 2));
+                    
+                    if (dist < minD) {
+                        minD = dist;
+                        bestWireId = geo.wire.id;
+                        bestPos = closest;
+                        // Determine rotation based on segment
+                        if (Math.abs(p1.x - p2.x) < 0.1) bestRot = 90; // Vertical segment
+                        else bestRot = 0; // Horizontal
+                    }
+                }
             });
-            setPotentialSnapWire(closestWire);
-            setPotentialSnapTerminal(null);
+            
+            setPotentialSnapWire(bestWireId);
+            if (bestWireId && bestPos) {
+                setPotentialSnapClamp({ position: bestPos, rotation: bestRot });
+            } else {
+                setPotentialSnapClamp(null);
+            }
         }
 
         return; // Consume event
     }
 
-    // 3. Dragging Component
+    // 3. Dragging Component (With Collision Detection)
     if (isDraggingComp) {
       setComponents(prev => prev.map(c => {
         if (c.id !== isDraggingComp) return c;
+        
         const rawX = worldPos.x - dragOffset.x;
         const rawY = worldPos.y - dragOffset.y;
-        
-        const newX = Math.round(rawX / SNAP_GRID) * SNAP_GRID;
-        const newY = Math.round(rawY / SNAP_GRID) * SNAP_GRID;
+        const targetX = Math.round(rawX / SNAP_GRID) * SNAP_GRID;
+        const targetY = Math.round(rawY / SNAP_GRID) * SNAP_GRID;
+
+        // Collision Check Logic
+        const check = (x: number, y: number) => {
+            const temp = { ...c, position: { x, y } };
+            const r1 = getVisualRect(temp);
+            return prev.some(other => {
+                if (other.id === c.id) return false;
+                return isOverlapping(r1, getVisualRect(other));
+            });
+        };
+
+        let finalX = c.position.x;
+        let finalY = c.position.y;
+
+        // Try moving to target
+        if (!check(targetX, targetY)) {
+            finalX = targetX;
+            finalY = targetY;
+        } else if (!check(targetX, c.position.y)) {
+            // Try horizontal slide
+            finalX = targetX;
+        } else if (!check(c.position.x, targetY)) {
+            // Try vertical slide
+            finalY = targetY;
+        }
+        // else blocked
 
         // If this component has a plug, we need to move the plug along with it unless plugged in
         let newPlugPos = c.plugPosition;
         if (c.plugPosition && !c.pluggedSocketId) {
-            const dx = newX - c.position.x;
-            const dy = newY - c.position.y;
+            const dx = finalX - c.position.x;
+            const dy = finalY - c.position.y;
             newPlugPos = { x: c.plugPosition.x + dx, y: c.plugPosition.y + dy };
         }
 
         return {
           ...c,
-          position: { x: newX, y: newY },
+          position: { x: finalX, y: finalY },
           plugPosition: newPlugPos
         };
       }));
@@ -1321,8 +1486,8 @@ export default function App() {
      const start = getTerminalPos(wire.fromCompId, wire.fromTerminal);
      const end = getTerminalPos(wire.toCompId, wire.toTerminal);
      if (!start || !end) return null;
-     const min = wire.orientation === 'vertical' ? Math.min(start.y, end.y) : Math.min(start.x, end.x);
-     const max = wire.orientation === 'vertical' ? Math.max(start.y, end.y) : Math.max(start.x, end.x);
+     const min = wire.orientation === 'vertical' ? Math.min(start.y, end.y) : Math.min(start.x, end.y);
+     const max = wire.orientation === 'vertical' ? Math.max(start.y, end.y) : Math.max(start.x, end.y);
      return { min, max };
   };
 
@@ -1530,26 +1695,30 @@ export default function App() {
     let clampRotation = 0;
     
     if (draggingProbe === 'clamp') {
-        if (potentialSnapWire) {
-             const geo = wireGeometries.find(g => g.wire.id === potentialSnapWire);
-             if (geo) {
+        if (potentialSnapWire && potentialSnapClamp) {
+             // Snapped during drag
+             clampPosWorld = potentialSnapClamp.position;
+             clampRotation = potentialSnapClamp.rotation;
+        } else {
+             // Free drag
+             clampPosWorld = screenToWorld(probeDragPos.x, probeDragPos.y);
+             clampRotation = 0; // Default or could infer from movement
+        }
+    } else if (multimeter.clampedWireId) {
+        if (multimeter.clampPosition) {
+            // Use stored position
+            clampPosWorld = multimeter.clampPosition;
+            clampRotation = multimeter.clampRotation || 0;
+        } else {
+            // Fallback (e.g. if loaded from old state)
+            const geo = wireGeometries.find(g => g.wire.id === multimeter.clampedWireId);
+            if (geo) {
                 clampPosWorld = {
                     x: (geo.trunkStart.x + geo.trunkEnd.x) / 2,
                     y: (geo.trunkStart.y + geo.trunkEnd.y) / 2
                 };
                 clampRotation = geo.wire.orientation === 'vertical' ? 90 : 0;
-             }
-        } else {
-             clampPosWorld = screenToWorld(probeDragPos.x, probeDragPos.y);
-        }
-    } else if (multimeter.clampedWireId) {
-        const geo = wireGeometries.find(g => g.wire.id === multimeter.clampedWireId);
-        if (geo) {
-            clampPosWorld = {
-                x: (geo.trunkStart.x + geo.trunkEnd.x) / 2,
-                y: (geo.trunkStart.y + geo.trunkEnd.y) / 2
-            };
-            clampRotation = geo.wire.orientation === 'vertical' ? 90 : 0;
+            }
         }
     }
 
@@ -1557,6 +1726,13 @@ export default function App() {
   };
 
   const meterRender = getMultimeterRenderData();
+
+  // Helper for wire cursor
+  const getWireCursor = (orientation: 'vertical' | 'horizontal') => {
+      if (draggingProbe === 'clamp') return 'crosshair'; // Specific for clamp
+      if (draggingProbe) return 'default'; 
+      return orientation === 'vertical' ? 'ns-resize' : 'ew-resize';
+  };
 
   return (
     <div className="flex flex-col h-full font-sans select-none">
@@ -1683,6 +1859,13 @@ export default function App() {
              {showLabels ? 'Hide Labels' : 'Show Labels'}
           </button>
           <button 
+            onClick={() => setShowSymbols(!showSymbols)}
+            className="flex items-center gap-2 px-3 py-1 bg-slate-600 hover:bg-slate-500 rounded text-sm transition-colors"
+          >
+             <PenTool size={16} />
+             {showSymbols ? 'Hide Symbol' : 'Show Symbol'}
+          </button>
+          <button 
             onClick={clearAll}
             className="flex items-center gap-2 px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm transition-colors"
           >
@@ -1750,6 +1933,10 @@ export default function App() {
                <button onClick={() => addComponent('SWITCH_2W')} className="flex flex-col items-center justify-center p-2 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
                   <IconSwitch label="2W" />
                   <span className="text-xs text-center">2-Way Switch</span>
+               </button>
+               <button onClick={() => addComponent('SWITCH_2G_2W')} className="flex flex-col items-center justify-center p-2 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
+                  <IconSwitch label="2G" />
+                  <span className="text-xs text-center">2-Gang Switch</span>
                </button>
                 <button onClick={() => addComponent('SWITCH_INT')} className="flex flex-col items-center justify-center p-2 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
                   <IconSwitch label="INT" />
@@ -1911,6 +2098,7 @@ export default function App() {
                   onRotate={() => rotateComponent(comp.id)}
                   onToggleState={(subKey) => toggleComponentState(comp.id, subKey)}
                   showLabels={showLabels}
+                  showSymbols={showSymbols}
                   onDuplicate={() => duplicateComponent(comp.id)}
                   onPlugMouseDown={(e) => handlePlugMouseDown(e, comp.id)} // Pass dragging handler
                 />
@@ -2060,7 +2248,7 @@ export default function App() {
                             x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
                             stroke="transparent"
                             strokeWidth="20"
-                            cursor={geo.wire.orientation === 'vertical' ? 'ns-resize' : 'ew-resize'}
+                            cursor={getWireCursor(geo.wire.orientation)}
                             onMouseDown={(e) => handleWireSegmentMouseDown(e, geo.wire.id, 'start')}
                           />
                           {/* Trunk Segment */}
@@ -2068,7 +2256,7 @@ export default function App() {
                             x1={p2.x} y1={p2.y} x2={p3.x} y2={p3.y}
                             stroke="transparent"
                             strokeWidth="20"
-                            cursor={geo.wire.orientation === 'vertical' ? 'ew-resize' : 'ns-resize'}
+                            cursor={getWireCursor(geo.wire.orientation === 'vertical' ? 'horizontal' : 'vertical')}
                             onMouseDown={(e) => handleWireSegmentMouseDown(e, geo.wire.id, 'trunk')}
                             onDoubleClick={(e) => handleWireHandleDoubleClick(e, geo.wire, geo)}
                           />
@@ -2077,7 +2265,7 @@ export default function App() {
                             x1={p3.x} y1={p3.y} x2={p4.x} y2={p4.y}
                             stroke="transparent"
                             strokeWidth="20"
-                            cursor={geo.wire.orientation === 'vertical' ? 'ns-resize' : 'ew-resize'}
+                            cursor={getWireCursor(geo.wire.orientation)}
                             onMouseDown={(e) => handleWireSegmentMouseDown(e, geo.wire.id, 'end')}
                           />
 
@@ -2087,7 +2275,7 @@ export default function App() {
                             stroke="transparent"
                             strokeWidth="10"
                             fill="none"
-                            cursor="pointer"
+                            cursor={draggingProbe === 'clamp' ? 'crosshair' : 'pointer'}
                             onMouseDown={(e) => {
                               if (!draggingWireSegment) handleWireSegmentMouseDown(e, geo.wire.id, 'trunk');
                             }}
@@ -2226,7 +2414,7 @@ export default function App() {
                   <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-50">
                       {meterRender.redPosWorld && (
                           <div 
-                              className="absolute w-4 h-24 origin-bottom flex flex-col items-center justify-end pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-105 transition-transform"
+                              className={`absolute w-4 h-24 origin-bottom flex flex-col items-center justify-end ${draggingProbe === 'red' ? 'pointer-events-none' : 'pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-105'} transition-transform`}
                               style={{ left: meterRender.redPosWorld.x - 8, top: meterRender.redPosWorld.y - 96 }}
                               onMouseDown={(e) => {
                                   e.stopPropagation();
@@ -2246,7 +2434,7 @@ export default function App() {
                       )}
                       {meterRender.blackPosWorld && (
                           <div 
-                              className="absolute w-4 h-24 origin-bottom flex flex-col items-center justify-end pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-105 transition-transform"
+                              className={`absolute w-4 h-24 origin-bottom flex flex-col items-center justify-end ${draggingProbe === 'black' ? 'pointer-events-none' : 'pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-105'} transition-transform`}
                               style={{ left: meterRender.blackPosWorld.x - 8, top: meterRender.blackPosWorld.y - 96 }}
                               onMouseDown={(e) => {
                                   e.stopPropagation();
@@ -2268,7 +2456,7 @@ export default function App() {
                       {/* Clamp Head */}
                       {meterRender.clampPosWorld && (
                           <div 
-                             className="absolute pointer-events-auto cursor-grab active:cursor-grabbing"
+                             className={`absolute ${draggingProbe === 'clamp' ? 'pointer-events-none' : 'pointer-events-auto cursor-grab active:cursor-grabbing'}`}
                              style={{ 
                                  left: meterRender.clampPosWorld.x, 
                                  top: meterRender.clampPosWorld.y,
@@ -2282,17 +2470,35 @@ export default function App() {
                                  setMultimeter(p => ({ ...p, clampedWireId: null }));
                               }}
                           >
-                              {/* Clamp Jaw */}
-                              <div className="w-16 h-12 relative flex items-center justify-center">
-                                  {/* Top Jaw */}
-                                  <div className="absolute top-0 w-full h-6 border-4 border-yellow-500 rounded-t-full bg-gray-900 z-10"></div>
-                                  {/* Bottom Jaw (Gap) */}
-                                  <div className="absolute bottom-0 w-full h-6 border-4 border-yellow-500 rounded-b-full bg-gray-900 z-10"></div>
-                                  
-                                  {/* Wire passthrough gap visual */}
-                                  <div className="absolute inset-0 flex items-center justify-center z-0">
-                                      <div className="w-8 h-8 bg-black/20 rounded-full"></div>
-                                  </div>
+                              {/* Clamp Jaw - U Shape */}
+                              <div className="relative flex items-center justify-center">
+                                  <svg width="50" height="80" viewBox="0 0 50 80" className="drop-shadow-md overflow-visible">
+                                      {/* Handle connection */}
+                                      <path d="M 20 80 L 30 80 L 25 60 Z" fill="#333" />
+                                      
+                                      {/* U Body */}
+                                      {/* A thick U shape path */}
+                                      <path 
+                                        d="M 10 10 L 10 50 A 15 15 0 0 0 40 50 L 40 10"
+                                        fill="none"
+                                        stroke="#EAB308" // Yellow
+                                        strokeWidth="12"
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                      />
+                                      {/* Inner Dark Stroke for definition */}
+                                      <path 
+                                        d="M 10 10 L 10 50 A 15 15 0 0 0 40 50 L 40 10"
+                                        fill="none"
+                                        stroke="#1f2937" // Dark Gray
+                                        strokeWidth="2"
+                                        strokeLinecap="round"
+                                        className="opacity-40"
+                                      />
+                                       {/* Red tips */}
+                                      <rect x="4" y="8" width="12" height="4" fill="#ef4444" rx="1" />
+                                      <rect x="34" y="8" width="12" height="4" fill="#ef4444" rx="1" />
+                                  </svg>
                               </div>
                           </div>
                       )}
@@ -2336,7 +2542,7 @@ export default function App() {
                      setDraggingProbe('clamp');
                      setProbeDragPos({ x: e.clientX, y: e.clientY });
                      dragStartTime.current = Date.now();
-                     setMultimeter(p => ({ ...p, clampedWireId: null }));
+                     setMultimeter(p => ({ ...p, clampedWireId: null, clampPosition: undefined, clampRotation: undefined }));
                 }}
             />
         )}

@@ -166,9 +166,12 @@ export const Multimeter: React.FC<Props> = ({
                 onMouseDown={(e) => { e.stopPropagation(); onClampDragStart(e); }}
                 title="Drag Current Clamp"
              >
-                <Gauge className="text-yellow-400 w-6 h-6" />
-                <div className="w-1 h-6 bg-gray-700 mt-1 rounded-full"></div>
-                <div className="w-3 h-3 border-2 border-yellow-400 rounded-full mt-[-4px] bg-gray-900"></div>
+                {/* Resemble U-Clamp */}
+                <div className="relative w-6 h-8 flex justify-center items-end mb-1">
+                    <div className="w-5 h-6 rounded-b-full border-4 border-yellow-400 border-t-0"></div>
+                    {/* Handle */}
+                    <div className="absolute -bottom-2 w-1 h-3 bg-gray-600"></div>
+                </div>
              </div>
         )}
     </div>

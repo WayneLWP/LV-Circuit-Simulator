@@ -1,5 +1,4 @@
 
-
 export type WireColor = 'brown' | 'blue' | 'green' | 'black' | 'grey';
 
 export interface Position {
@@ -90,4 +89,6 @@ export interface MultimeterState {
   clampedWireId: string | null; // WireID
   redProbePosition?: Position; // World Coordinates if placed freely
   blackProbePosition?: Position; // World Coordinates if placed freely
+  clampPosition?: Position; // Specific position on the wire
+  clampRotation?: number; // Specific rotation based on wire segment
 }

@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { ComponentInstance, TerminalDef } from '../types';
 import { COMPONENT_CATALOG } from '../constants';
@@ -9,12 +10,13 @@ interface Props {
   isSelected: boolean;
   isEnergized: boolean;
   onMouseDown: (e: React.MouseEvent) => void;
-  onTerminalMouseDown: (e: React.MouseEvent, termId: string) => void; // Kept for interface compatibility, unused for interaction
-  onTerminalMouseUp: (e: React.MouseEvent, termId: string) => void;   // Kept for interface compatibility, unused for interaction
+  onTerminalMouseDown: (e: React.MouseEvent, termId: string) => void;
+  onTerminalMouseUp: (e: React.MouseEvent, termId: string) => void;
   onDelete: () => void;
   onRotate: () => void;
   onToggleState: (subKey?: string) => void;
   showLabels: boolean;
+  showSymbols: boolean; // New prop
   onDuplicate?: () => void;
   onPlugMouseDown?: (e: React.MouseEvent) => void; 
 }
@@ -46,6 +48,25 @@ const TerminalPoint: React.FC<{
   );
 };
 
+// Extracted SymbolWrapper to avoid defining component inside render (React performance) and fix TS errors
+interface SymbolWrapperProps {
+  width: number;
+  height: number;
+  onToggle: () => void;
+  children: React.ReactNode;
+}
+
+const SymbolWrapper: React.FC<SymbolWrapperProps> = ({ width, height, onToggle, children }) => (
+  <div 
+     className="w-full h-full bg-white border-2 border-black relative cursor-pointer" 
+     onClick={(e) => { e.stopPropagation(); onToggle(); }}
+  >
+      <svg className="w-full h-full absolute inset-0 pointer-events-none" viewBox={`0 0 ${width} ${height}`}>
+           {children}
+      </svg>
+  </div>
+);
+
 export const ComponentNode: React.FC<Props> = ({
   data,
   isSelected,
@@ -55,6 +76,7 @@ export const ComponentNode: React.FC<Props> = ({
   onRotate,
   onToggleState,
   showLabels,
+  showSymbols,
   onDuplicate,
   onPlugMouseDown
 }) => {
@@ -65,7 +87,261 @@ export const ComponentNode: React.FC<Props> = ({
   const isTripped = data.state.isTripped;
   const isOn = data.state.isOn;
   
-  // Specific Visuals
+  // --- Schematic Symbol Renderer ---
+  const renderSymbol = () => {
+      // SVG Stroke standard
+      const STROKE = "black";
+      const WIDTH = 2;
+
+      const wrapperProps = {
+          width: def.width,
+          height: def.height,
+          onToggle: () => onToggleState()
+      };
+
+      switch (data.type) {
+          case 'SWITCH_1G': // Terminals: COM(40,20), L1(40,70), E(65,65)
+              return (
+                  <SymbolWrapper {...wrapperProps}>
+                      <circle cx="40" cy="20" r="2" fill="black" />
+                      <circle cx="40" cy="70" r="2" fill="black" />
+                      {/* Fixed Line */}
+                      <line x1="40" y1="20" x2="40" y2="35" stroke={STROKE} strokeWidth={WIDTH} />
+                      {/* Lever */}
+                      {isOn ? (
+                          <line x1="40" y1="35" x2="40" y2="70" stroke={STROKE} strokeWidth={WIDTH} />
+                      ) : (
+                          <line x1="40" y1="35" x2="60" y2="50" stroke={STROKE} strokeWidth={WIDTH} />
+                      )}
+                  </SymbolWrapper>
+              );
+          case 'SWITCH_2W': // COM(40,15), L1(20,65), L2(60,65), E(75,75)
+              return (
+                   <SymbolWrapper {...wrapperProps}>
+                      <circle cx="40" cy="15" r="2" fill="black" />
+                      <circle cx="20" cy="65" r="2" fill="black" />
+                      <circle cx="60" cy="65" r="2" fill="black" />
+                      
+                      <line x1="40" y1="15" x2="40" y2="35" stroke={STROKE} strokeWidth={WIDTH} />
+                      {data.state.position === 1 ? (
+                          <line x1="40" y1="35" x2="20" y2="65" stroke={STROKE} strokeWidth={WIDTH} />
+                      ) : (
+                          <line x1="40" y1="35" x2="60" y2="65" stroke={STROKE} strokeWidth={WIDTH} />
+                      )}
+                   </SymbolWrapper>
+              );
+          case 'SWITCH_2G_2W': 
+              return (
+                  <div className="w-full h-full bg-white border-2 border-black relative">
+                      {/* Left Click Zone */}
+                      <div 
+                          className="absolute left-0 top-0 w-1/2 h-full cursor-pointer hover:bg-black/5"
+                          onClick={(e) => { e.stopPropagation(); onToggleState('sw1'); }}
+                          title="Switch 1"
+                      />
+                      {/* Right Click Zone */}
+                      <div 
+                          className="absolute right-0 top-0 w-1/2 h-full cursor-pointer hover:bg-black/5"
+                          onClick={(e) => { e.stopPropagation(); onToggleState('sw2'); }}
+                          title="Switch 2"
+                      />
+                      
+                      <svg className="w-full h-full absolute inset-0 pointer-events-none" viewBox={`0 0 ${def.width} ${def.height}`}>
+                          {/* Sw 1 Left */}
+                          <circle cx="25" cy="15" r="2" fill="black" />
+                          <circle cx="15" cy="80" r="2" fill="black" />
+                          <circle cx="35" cy="80" r="2" fill="black" />
+                          <line x1="25" y1="15" x2="25" y2="35" stroke={STROKE} strokeWidth={WIDTH} />
+                          {data.state.sw1 === 1 ? 
+                              <line x1="25" y1="35" x2="15" y2="80" stroke={STROKE} strokeWidth={WIDTH} /> :
+                              <line x1="25" y1="35" x2="35" y2="80" stroke={STROKE} strokeWidth={WIDTH} />
+                          }
+
+                          {/* Sw 2 Right */}
+                          <circle cx="75" cy="15" r="2" fill="black" />
+                          <circle cx="65" cy="80" r="2" fill="black" />
+                          <circle cx="85" cy="80" r="2" fill="black" />
+                          <line x1="75" y1="15" x2="75" y2="35" stroke={STROKE} strokeWidth={WIDTH} />
+                          {data.state.sw2 === 1 ? 
+                              <line x1="75" y1="35" x2="65" y2="80" stroke={STROKE} strokeWidth={WIDTH} /> :
+                              <line x1="75" y1="35" x2="85" y2="80" stroke={STROKE} strokeWidth={WIDTH} />
+                          }
+                          
+                          {/* Earth */}
+                          <text x="50" y="55" textAnchor="middle" fontSize="10">E</text>
+                      </svg>
+                  </div>
+              );
+          case 'SWITCH_INT': // L1(20,15), L2(60,15), L3(20,65), L4(60,65)
+              return (
+                  <SymbolWrapper {...wrapperProps}>
+                      <circle cx="20" cy="15" r="2" fill="black" />
+                      <circle cx="60" cy="15" r="2" fill="black" />
+                      <circle cx="20" cy="65" r="2" fill="black" />
+                      <circle cx="60" cy="65" r="2" fill="black" />
+                      
+                      {data.state.position === 1 ? (
+                          // Straight
+                          <>
+                            <line x1="20" y1="15" x2="20" y2="65" stroke={STROKE} strokeWidth={WIDTH} strokeDasharray="4 2" />
+                            <line x1="60" y1="15" x2="60" y2="65" stroke={STROKE} strokeWidth={WIDTH} strokeDasharray="4 2" />
+                          </>
+                      ) : (
+                          // Cross
+                          <>
+                            <line x1="20" y1="15" x2="60" y2="65" stroke={STROKE} strokeWidth={WIDTH} strokeDasharray="4 2" />
+                            <line x1="60" y1="15" x2="20" y2="65" stroke={STROKE} strokeWidth={WIDTH} strokeDasharray="4 2" />
+                          </>
+                      )}
+                  </SymbolWrapper>
+              );
+          case 'MCB': // IN(30,10), OUT(30,110)
+               return (
+                   <SymbolWrapper {...wrapperProps}>
+                       <line x1="30" y1="10" x2="30" y2="30" stroke={STROKE} strokeWidth={WIDTH} />
+                       <line x1="30" y1="90" x2="30" y2="110" stroke={STROKE} strokeWidth={WIDTH} />
+                       {/* Switch mechanism */}
+                       {isOn ? (
+                           <line x1="30" y1="30" x2="30" y2="90" stroke={STROKE} strokeWidth={WIDTH} />
+                       ) : (
+                           <line x1="30" y1="30" x2="45" y2="60" stroke={STROKE} strokeWidth={WIDTH} />
+                       )}
+                       {/* Cross for MCB */}
+                       <line x1="25" y1="45" x2="35" y2="55" stroke={STROKE} strokeWidth={WIDTH} />
+                       <line x1="35" y1="45" x2="25" y2="55" stroke={STROKE} strokeWidth={WIDTH} />
+                       {isTripped && <text x="35" y="80" fontSize="10" fill="red" fontWeight="bold">TRIP</text>}
+                   </SymbolWrapper>
+               );
+          case 'RCD': // L_IN(20,10), N_IN(60,10) ...
+               return (
+                    <SymbolWrapper {...wrapperProps}>
+                        {/* L Pole */}
+                        <line x1="20" y1="10" x2="20" y2="30" stroke={STROKE} strokeWidth={WIDTH} />
+                        <line x1="20" y1="90" x2="20" y2="110" stroke={STROKE} strokeWidth={WIDTH} />
+                        {isOn ? (
+                           <line x1="20" y1="30" x2="20" y2="90" stroke={STROKE} strokeWidth={WIDTH} />
+                        ) : (
+                           <line x1="20" y1="30" x2="35" y2="60" stroke={STROKE} strokeWidth={WIDTH} />
+                        )}
+                        {/* N Pole */}
+                        <line x1="60" y1="10" x2="60" y2="30" stroke={STROKE} strokeWidth={WIDTH} />
+                        <line x1="60" y1="90" x2="60" y2="110" stroke={STROKE} strokeWidth={WIDTH} />
+                        {isOn ? (
+                           <line x1="60" y1="30" x2="60" y2="90" stroke={STROKE} strokeWidth={WIDTH} />
+                        ) : (
+                           <line x1="60" y1="30" x2="75" y2="60" stroke={STROKE} strokeWidth={WIDTH} />
+                        )}
+                        {/* RCD Oval on L switch */}
+                        <ellipse cx="20" cy="60" rx="8" ry="4" fill="none" stroke={STROKE} strokeWidth={WIDTH} />
+                        {/* Dashed tie */}
+                        <line x1="20" y1="60" x2="60" y2="60" stroke={STROKE} strokeWidth={1} strokeDasharray="3 3" />
+                    </SymbolWrapper>
+               );
+          case 'SOCKET_SINGLE': // L(20,60), N(60,60), E(40,20)
+               return (
+                   <SymbolWrapper {...wrapperProps}>
+                       {/* Earth */}
+                       <line x1="40" y1="20" x2="40" y2="35" stroke={STROKE} strokeWidth={WIDTH} />
+                       <line x1="35" y1="35" x2="45" y2="35" stroke={STROKE} strokeWidth={WIDTH} />
+                       
+                       {/* Socket Arc */}
+                       <path d="M 20 60 Q 40 85 60 60" fill="none" stroke={STROKE} strokeWidth={WIDTH} />
+                       
+                       {/* Terminals visually connecting */}
+                       <line x1="20" y1="60" x2="20" y2="60" stroke={STROKE} strokeWidth={WIDTH} />
+                       <line x1="60" y1="60" x2="60" y2="60" stroke={STROKE} strokeWidth={WIDTH} />
+
+                       {/* Switch if ON/OFF */}
+                       {isOn && <circle cx="70" cy="70" r="3" fill="red" opacity="0.5" />}
+                   </SymbolWrapper>
+               );
+          case 'SOCKET_DOUBLE':
+               return (
+                   <SymbolWrapper {...wrapperProps}>
+                       {/* Left Socket */}
+                       <path d="M 30 60 Q 50 85 70 60" fill="none" stroke={STROKE} strokeWidth={WIDTH} />
+                       <line x1="50" y1="35" x2="50" y2="45" stroke={STROKE} strokeWidth={WIDTH} />
+                       <line x1="45" y1="45" x2="55" y2="45" stroke={STROKE} strokeWidth={WIDTH} />
+
+                       {/* Right Socket */}
+                       {/* Note: Terminals for right socket aren't explicit in double socket simple model, usually wired once */}
+                       <path d="M 90 60 Q 110 85 130 60" fill="none" stroke={STROKE} strokeWidth={WIDTH} />
+                       <line x1="110" y1="35" x2="110" y2="45" stroke={STROKE} strokeWidth={WIDTH} />
+                       <line x1="105" y1="45" x2="115" y2="45" stroke={STROKE} strokeWidth={WIDTH} />
+                   </SymbolWrapper>
+               );
+          case 'LAMP_PENDANT': // Center approx 50,75
+               return (
+                   <SymbolWrapper {...wrapperProps}>
+                       {/* Circle with Cross */}
+                       <circle cx="50" cy="90" r="20" fill="none" stroke={STROKE} strokeWidth={WIDTH} />
+                       <line x1="36" y1="76" x2="64" y2="104" stroke={STROKE} strokeWidth={WIDTH} />
+                       <line x1="64" y1="76" x2="36" y2="104" stroke={STROKE} strokeWidth={WIDTH} />
+                       
+                       {/* Connections from rose terminals */}
+                       <line x1="20" y1="120" x2="35" y2="100" stroke={STROKE} strokeWidth={1} strokeDasharray="2 2" />
+                       <line x1="80" y1="120" x2="65" y2="100" stroke={STROKE} strokeWidth={1} strokeDasharray="2 2" />
+                       
+                       {/* Rose Box Area */}
+                       <rect x="10" y="110" width="80" height="20" fill="none" stroke={STROKE} strokeWidth={1} strokeDasharray="1 1" />
+                   </SymbolWrapper>
+               );
+          case 'SOURCE_AC':
+               return (
+                   <SymbolWrapper {...wrapperProps}>
+                       <circle cx="50" cy="50" r="30" fill="none" stroke={STROKE} strokeWidth={WIDTH} />
+                       <path d="M 35 50 Q 42 40 50 50 T 65 50" fill="none" stroke={STROKE} strokeWidth={WIDTH} />
+                   </SymbolWrapper>
+               );
+          case 'SOURCE_3PH':
+               return (
+                   <SymbolWrapper {...wrapperProps}>
+                       <rect x="10" y="10" width="120" height="80" fill="none" stroke={STROKE} strokeWidth={WIDTH} />
+                       <text x="60" y="55" textAnchor="middle" fontSize="20" fontFamily="serif" fontWeight="bold">3 ~</text>
+                   </SymbolWrapper>
+               );
+           case 'FAN':
+           case 'FAN_PLUG':
+               return (
+                   <SymbolWrapper {...wrapperProps}>
+                       <circle cx="40" cy="40" r="30" fill="none" stroke={STROKE} strokeWidth={WIDTH} />
+                       <text x="40" y="45" textAnchor="middle" fontSize="24" fontFamily="serif" fontWeight="bold">M</text>
+                   </SymbolWrapper>
+               );
+           case 'JUNCTION_BOX':
+               return (
+                   <SymbolWrapper {...wrapperProps}>
+                       <circle cx="50" cy="50" r="40" fill="none" stroke={STROKE} strokeWidth={WIDTH} />
+                       <circle cx="25" cy="25" r="3" fill="black" />
+                       <circle cx="75" cy="25" r="3" fill="black" />
+                       <circle cx="75" cy="75" r="3" fill="black" />
+                       <circle cx="25" cy="75" r="3" fill="black" />
+                   </SymbolWrapper>
+               );
+           case 'BAR_NEUTRAL':
+           case 'BAR_EARTH':
+               return (
+                   <SymbolWrapper {...wrapperProps}>
+                       <line x1="10" y1="20" x2="130" y2="20" stroke={STROKE} strokeWidth={4} />
+                       <circle cx="20" cy="20" r="3" fill="white" stroke={STROKE} />
+                       <circle cx="45" cy="20" r="3" fill="white" stroke={STROKE} />
+                       <circle cx="70" cy="20" r="3" fill="white" stroke={STROKE} />
+                       <circle cx="95" cy="20" r="3" fill="white" stroke={STROKE} />
+                       <circle cx="120" cy="20" r="3" fill="white" stroke={STROKE} />
+                   </SymbolWrapper>
+               );
+          default:
+              // Fallback generic box
+              return (
+                  <SymbolWrapper {...wrapperProps}>
+                      <rect x="2" y="2" width={def.width-4} height={def.height-4} fill="none" stroke={STROKE} strokeWidth={WIDTH} />
+                      <text x="50%" y="50%" textAnchor="middle" fontSize="10">{def.name.substring(0,8)}</text>
+                  </SymbolWrapper>
+              );
+      }
+  };
+
+  // Specific Visuals (Realistic)
   const renderVisuals = () => {
     switch(data.type) {
       case 'LAMP_PENDANT':
@@ -103,7 +379,7 @@ export const ComponentNode: React.FC<Props> = ({
                     d="M 45 60 Q 40 90 20 115" 
                     fill="none" 
                     stroke="#8B4513" 
-                    strokeWidth="3"
+                    strokeWidth="3" 
                     strokeLinecap="round"
                  />
                  {/* Blue wire from holder to N (Right Terminal) */}
@@ -111,7 +387,7 @@ export const ComponentNode: React.FC<Props> = ({
                     d="M 55 60 Q 60 90 80 115" 
                     fill="none" 
                     stroke="#0056b3" 
-                    strokeWidth="3"
+                    strokeWidth="3" 
                     strokeLinecap="round"
                  />
              </svg>
@@ -126,6 +402,25 @@ export const ComponentNode: React.FC<Props> = ({
             onClick={(e) => { e.stopPropagation(); onToggleState(); }}
           >
              <div className={`w-4 h-8 bg-white border shadow-md transition-transform ${isOn || (data.state.position === 2) ? 'translate-y-2' : '-translate-y-2'}`}></div>
+          </div>
+        );
+      case 'SWITCH_2G_2W':
+        return (
+          <div className="w-full h-full bg-white border border-gray-300 rounded shadow-sm flex items-center justify-center p-1 gap-1 select-none">
+              {/* Switch 1 */}
+              <div 
+                 className={`h-4/5 flex-1 border rounded shadow-sm cursor-pointer flex items-center justify-center transition-colors ${data.state.sw1 === 1 ? 'bg-gray-50' : 'bg-gray-100'}`}
+                 onClick={(e) => { e.stopPropagation(); onToggleState('sw1'); }}
+              >
+                  <div className={`w-3 h-8 border bg-white shadow-sm transition-transform ${data.state.sw1 === 1 ? '-translate-y-1' : 'translate-y-1'}`}></div>
+              </div>
+              {/* Switch 2 */}
+              <div 
+                 className={`h-4/5 flex-1 border rounded shadow-sm cursor-pointer flex items-center justify-center transition-colors ${data.state.sw2 === 1 ? 'bg-gray-50' : 'bg-gray-100'}`}
+                 onClick={(e) => { e.stopPropagation(); onToggleState('sw2'); }}
+              >
+                  <div className={`w-3 h-8 border bg-white shadow-sm transition-transform ${data.state.sw2 === 1 ? '-translate-y-1' : 'translate-y-1'}`}></div>
+              </div>
           </div>
         );
       case 'SWITCH_ROTARY':
@@ -502,9 +797,9 @@ export const ComponentNode: React.FC<Props> = ({
       {/* Selection Halo */}
       <div className={`absolute inset-0 rounded-lg pointer-events-none border-2 transition-colors ${isSelected ? 'border-blue-500 bg-blue-50/10' : 'border-gray-300 bg-white/80'}`}></div>
 
-      {/* Component Content */}
+      {/* Component Content (Visuals OR Symbols) */}
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        {renderVisuals()}
+        {showSymbols ? renderSymbol() : renderVisuals()}
       </div>
 
       {/* Label positioned above (or side when rotated), counter-rotated to stay upright */}
