@@ -1,4 +1,5 @@
 
+
 export type WireColor = 'brown' | 'blue' | 'green' | 'black' | 'grey';
 
 export interface Position {
@@ -91,4 +92,15 @@ export interface MultimeterState {
   blackProbePosition?: Position; // World Coordinates if placed freely
   clampPosition?: Position; // Specific position on the wire
   clampRotation?: number; // Specific rotation based on wire segment
+}
+
+export interface MeggerState {
+  visible: boolean;
+  position: Position;
+  mode: 'OFF' | 'VOLTAGE' | 'CONTINUITY' | 'IR_250' | 'IR_500' | 'IR_1000';
+  isTestActive: boolean; // Button pressed
+  redProbeNode: string | null; 
+  blackProbeNode: string | null;
+  redProbePosition?: Position;
+  blackProbePosition?: Position;
 }

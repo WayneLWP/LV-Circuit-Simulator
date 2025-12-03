@@ -94,6 +94,34 @@ export const COMPONENT_CATALOG: Record<string, ComponentDef> = {
     initialState: { position: 1 }, // 1 or 2
     getInternalConnections: (state) => state.position === 1 ? [['COM', 'L1']] : [['COM', 'L2']],
   },
+  SWITCH_2G_2W: {
+    type: 'SWITCH_2G_2W',
+    name: '2-Gang 2-Way Switch',
+    category: 'control',
+    width: 80,
+    height: 80,
+    terminals: [
+      // Switch 1
+      { id: 'COM1', label: 'C1', x: 20, y: 12, type: 'Generic' },
+      { id: 'L1_1', label: '1_1', x: 12, y: 64, type: 'Generic' },
+      { id: 'L2_1', label: '2_1', x: 28, y: 64, type: 'Generic' },
+      // Switch 2
+      { id: 'COM2', label: 'C2', x: 60, y: 12, type: 'Generic' },
+      { id: 'L1_2', label: '1_2', x: 52, y: 64, type: 'Generic' },
+      { id: 'L2_2', label: '2_2', x: 68, y: 64, type: 'Generic' },
+      // Earth
+      { id: 'E', label: 'E', x: 72, y: 76, type: 'E' },
+    ],
+    initialState: { sw1: 1, sw2: 1 }, // Both switches in position 1
+    getInternalConnections: (state) => {
+        const conns: [string, string][] = [];
+        // Switch 1 logic
+        if (state.sw1 === 1) conns.push(['COM1', 'L1_1']); else conns.push(['COM1', 'L2_1']);
+        // Switch 2 logic
+        if (state.sw2 === 1) conns.push(['COM2', 'L1_2']); else conns.push(['COM2', 'L2_2']);
+        return conns;
+    },
+  },
   SWITCH_INT: {
     type: 'SWITCH_INT',
     name: 'Intermediate Switch',

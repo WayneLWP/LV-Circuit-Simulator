@@ -1,5 +1,6 @@
 
 
+
 import React from 'react';
 import { ComponentInstance, TerminalDef } from '../types';
 import { COMPONENT_CATALOG } from '../constants';
@@ -148,27 +149,27 @@ export const ComponentNode: React.FC<Props> = ({
                       
                       <svg className="w-full h-full absolute inset-0 pointer-events-none" viewBox={`0 0 ${def.width} ${def.height}`}>
                           {/* Sw 1 Left */}
-                          <circle cx="25" cy="15" r="2" fill="black" />
-                          <circle cx="15" cy="80" r="2" fill="black" />
-                          <circle cx="35" cy="80" r="2" fill="black" />
-                          <line x1="25" y1="15" x2="25" y2="35" stroke={STROKE} strokeWidth={WIDTH} />
+                          <circle cx="20" cy="12" r="2" fill="black" />
+                          <circle cx="12" cy="64" r="2" fill="black" />
+                          <circle cx="28" cy="64" r="2" fill="black" />
+                          <line x1="20" y1="12" x2="20" y2="28" stroke={STROKE} strokeWidth={WIDTH} />
                           {data.state.sw1 === 1 ? 
-                              <line x1="25" y1="35" x2="15" y2="80" stroke={STROKE} strokeWidth={WIDTH} /> :
-                              <line x1="25" y1="35" x2="35" y2="80" stroke={STROKE} strokeWidth={WIDTH} />
+                              <line x1="20" y1="28" x2="12" y2="64" stroke={STROKE} strokeWidth={WIDTH} /> :
+                              <line x1="20" y1="28" x2="28" y2="64" stroke={STROKE} strokeWidth={WIDTH} />
                           }
 
                           {/* Sw 2 Right */}
-                          <circle cx="75" cy="15" r="2" fill="black" />
-                          <circle cx="65" cy="80" r="2" fill="black" />
-                          <circle cx="85" cy="80" r="2" fill="black" />
-                          <line x1="75" y1="15" x2="75" y2="35" stroke={STROKE} strokeWidth={WIDTH} />
+                          <circle cx="60" cy="12" r="2" fill="black" />
+                          <circle cx="52" cy="64" r="2" fill="black" />
+                          <circle cx="68" cy="64" r="2" fill="black" />
+                          <line x1="60" y1="12" x2="60" y2="28" stroke={STROKE} strokeWidth={WIDTH} />
                           {data.state.sw2 === 1 ? 
-                              <line x1="75" y1="35" x2="65" y2="80" stroke={STROKE} strokeWidth={WIDTH} /> :
-                              <line x1="75" y1="35" x2="85" y2="80" stroke={STROKE} strokeWidth={WIDTH} />
+                              <line x1="60" y1="28" x2="52" y2="64" stroke={STROKE} strokeWidth={WIDTH} /> :
+                              <line x1="60" y1="28" x2="68" y2="64" stroke={STROKE} strokeWidth={WIDTH} />
                           }
                           
                           {/* Earth */}
-                          <text x="50" y="55" textAnchor="middle" fontSize="10">E</text>
+                          <text x="72" y="76" textAnchor="middle" fontSize="10">E</text>
                       </svg>
                   </div>
               );

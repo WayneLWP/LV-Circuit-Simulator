@@ -1,12 +1,15 @@
 
+
+
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { COMPONENT_CATALOG } from './constants';
-import { ComponentInstance, Wire, Position, WireColor, SimulationResult, MultimeterState } from './types';
+import { ComponentInstance, Wire, Position, WireColor, SimulationResult, MultimeterState, MeggerState } from './types';
 import { ComponentNode } from './components/ComponentNode';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { Multimeter } from './components/Multimeter';
+import { Megger } from './components/Megger';
 import { runSimulation } from './utils/circuit';
-import { RotateCcw, Zap, ShieldAlert, Trash2, Eye, EyeOff, Pipette, Activity, ChevronDown, ChevronRight, Calculator, Plug, Copy, RotateCw, PenTool } from 'lucide-react';
+import { RotateCcw, Zap, ShieldAlert, Trash2, Eye, EyeOff, Pipette, Activity, ChevronDown, ChevronRight, Calculator, Plug, Copy, RotateCw, PenTool, ClipboardCheck } from 'lucide-react';
 
 const SNAP_GRID = 10;
 const STUB_LENGTH = 10; // Default stub length
@@ -226,6 +229,15 @@ const IconMultimeter = () => (
   </svg>
 );
 
+const IconMegger = () => (
+  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className="text-orange-500 mb-2">
+      <rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor" fillOpacity="0.1" />
+      <path d="M8 8h8v6H8z" stroke="currentColor" />
+      <circle cx="12" cy="17" r="2" stroke="currentColor" />
+      <path d="M12 17l2 -2" stroke="currentColor" />
+  </svg>
+);
+
 
 // Helper to generate IDs
 const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -345,8 +357,22 @@ export default function App() {
     clampPosition: undefined,
     clampRotation: undefined
   });
-  // Transient state for dragging multimeter probes/clamps (Visual only)
-  const [draggingProbe, setDraggingProbe] = useState<'red' | 'black' | 'clamp' | null>(null);
+
+  // Megger State
+  const [megger, setMegger] = useState<MeggerState>({
+      visible: false,
+      position: { x: window.innerWidth - 300, y: 350 },
+      mode: 'OFF',
+      isTestActive: false,
+      redProbeNode: null,
+      blackProbeNode: null,
+      redProbePosition: undefined,
+      blackProbePosition: undefined
+  });
+
+  // Transient state for dragging multimeter/megger probes/clamps (Visual only)
+  // Extended type for dragging probes
+  const [draggingProbe, setDraggingProbe] = useState<'red' | 'black' | 'clamp' | 'megger-red' | 'megger-black' | null>(null);
   const [probeDragPos, setProbeDragPos] = useState<Position>({ x: 0, y: 0 }); // Mouse Pos during drag (Screen Coords)
   const [potentialSnapTerminal, setPotentialSnapTerminal] = useState<string | null>(null);
   const [potentialSnapWire, setPotentialSnapWire] = useState<string | null>(null);
@@ -378,6 +404,70 @@ export default function App() {
     };
   }, [viewState]);
 
+  // --- Graph / Connectivity Helpers for Tester Tools ---
+  const checkConnectivity = (nodeA: string, nodeB: string): boolean => {
+      // Build Adjacency Graph from components and wires
+      const graph = new Map<string, string[]>();
+      
+      const addEdge = (n1: string, n2: string) => {
+        if (!graph.has(n1)) graph.set(n1, []);
+        if (!graph.has(n2)) graph.set(n2, []);
+        graph.get(n1)!.push(n2);
+        graph.get(n2)!.push(n1);
+      };
+
+      wires.forEach(w => {
+        addEdge(`${w.fromCompId}:${w.fromTerminal}`, `${w.toCompId}:${w.toTerminal}`);
+      });
+
+      components.forEach(comp => {
+        const def = COMPONENT_CATALOG[comp.type];
+        if (def && def.getInternalConnections) {
+             const internals = def.getInternalConnections(comp.state);
+             internals.forEach(([t1, t2]) => {
+                addEdge(`${comp.id}:${t1}`, `${comp.id}:${t2}`);
+             });
+        }
+        // Handle Plug Connections
+        if (comp.type === 'FAN_PLUG' && comp.pluggedSocketId) {
+             const socket = components.find(c => c.id === comp.pluggedSocketId);
+             if (socket) {
+                 let isActive = false;
+                 let lTerm = 'L'; let nTerm = 'N';
+                 if (socket.type === 'SWITCH_COOKER') {
+                     isActive = socket.state.isSocketOn; lTerm = 'L_IN'; nTerm = 'N_IN';
+                 } else {
+                     isActive = socket.state.isOn;
+                 }
+                 if (isActive) {
+                     addEdge(`${socket.id}:${lTerm}`, `${comp.id}:L`);
+                     addEdge(`${socket.id}:${nTerm}`, `${comp.id}:N`);
+                     addEdge(`${socket.id}:E`, `${comp.id}:E`);
+                 }
+            }
+        }
+      });
+
+      // BFS
+      const queue = [nodeA];
+      const visited = new Set<string>();
+      visited.add(nodeA);
+
+      while(queue.length > 0) {
+          const curr = queue.shift()!;
+          if (curr === nodeB) return true;
+          
+          const neighbors = graph.get(curr) || [];
+          for (const next of neighbors) {
+              if (!visited.has(next)) {
+                  visited.add(next);
+                  queue.push(next);
+              }
+          }
+      }
+      return false;
+  };
+
   // --- Multimeter Logic ---
   
   const toggleMultimeter = () => {
@@ -394,6 +484,7 @@ export default function App() {
         // Reset position to center-ish if showing
         position: !prev.visible ? { x: window.innerWidth - 250, y: 100 } : prev.position
     }));
+    // Close Megger to avoid clutter? No, keep both openable.
   };
 
   const getMultimeterReading = () => {
@@ -436,10 +527,6 @@ export default function App() {
           const w = wires.find(w => w.id === multimeter.clampedWireId);
           if (!w) return '0.00 A';
 
-          // Find the load at the end of this chain? Too complex for this snippet.
-          // Let's use a random flux around typical values based on wire color or just generic.
-          // Or find component connected to.
-          
           const targetComp = components.find(c => c.id === w.toCompId);
           const def = targetComp ? COMPONENT_CATALOG[targetComp.type] : null;
           
@@ -455,6 +542,72 @@ export default function App() {
       }
   };
 
+  // --- Megger Logic ---
+  const toggleMegger = () => {
+       setMegger(prev => ({
+           ...prev,
+           visible: !prev.visible,
+           mode: 'OFF',
+           isTestActive: false,
+           redProbeNode: null,
+           blackProbeNode: null,
+           redProbePosition: undefined,
+           blackProbePosition: undefined,
+           position: !prev.visible ? { x: window.innerWidth - 300, y: 350 } : prev.position
+       }));
+  };
+
+  const getMeggerReading = () => {
+      if (!megger.visible) return '';
+      if (megger.mode === 'OFF') return '';
+      
+      const p1 = megger.redProbeNode ? (simResult.nodePotentials.get(megger.redProbeNode) || 'None') : 'None';
+      const p2 = megger.blackProbeNode ? (simResult.nodePotentials.get(megger.blackProbeNode) || 'None') : 'None';
+      
+      const hasVoltage = (p1 !== 'None' && p1 !== p2) || (p2 !== 'None' && p1 !== p2);
+      // Rough voltage check
+      const voltagePresent = hasVoltage && (p1.startsWith('L') || p2.startsWith('L'));
+
+      if (megger.mode === 'VOLTAGE') {
+           if (voltagePresent) return '230 V';
+           return '0 V';
+      }
+
+      // For Resistance tests, first check safety
+      if (voltagePresent) {
+           return 'VOLT!';
+      }
+
+      // Check probes connection
+      if (!megger.redProbeNode || !megger.blackProbeNode) {
+           if (megger.mode === 'CONTINUITY') return '> 99 Ω';
+           if (megger.mode === 'IR_250') return '> 999 MΩ';
+           if (megger.mode === 'IR_500') return '> 999 MΩ';
+           if (megger.mode === 'IR_1000') return '> 999 MΩ';
+           return '> 999 MΩ';
+      }
+
+      // Connectivity
+      const isConnected = checkConnectivity(megger.redProbeNode, megger.blackProbeNode);
+
+      if (megger.mode === 'CONTINUITY') {
+          if (isConnected) return '0.05 Ω';
+          return '> 99 Ω';
+      }
+
+      // IR Tests
+      if (megger.mode.startsWith('IR')) {
+          if (!megger.isTestActive) return '---';
+          if (isConnected) return '0.00 MΩ'; // Short / Leakage
+          
+          if (megger.mode === 'IR_250') return '> 200 MΩ';
+          if (megger.mode === 'IR_500') return '> 500 MΩ';
+          if (megger.mode === 'IR_1000') return '> 999 MΩ';
+          return '> 500 MΩ';
+      }
+
+      return '---';
+  };
 
   // --- Actions ---
 
@@ -502,6 +655,10 @@ export default function App() {
 
   const addComponent = (type: string) => {
     const def = COMPONENT_CATALOG[type];
+    if (!def) {
+      console.error(`Component definition missing for: ${type}`);
+      return;
+    }
     // Place in center of current view
     const container = containerRef.current;
     let centerX = 400; 
@@ -1042,18 +1199,31 @@ export default function App() {
       
       if (draggingProbe === 'red' || draggingProbe === 'black') {
           if (potentialSnapTerminal) {
-              // Connect
               setMultimeter(prev => ({
                   ...prev,
                   [draggingProbe === 'red' ? 'redProbeNode' : 'blackProbeNode']: potentialSnapTerminal,
                   [draggingProbe === 'red' ? 'redProbePosition' : 'blackProbePosition']: undefined
               }));
           } else {
-              // Drop on canvas
               setMultimeter(prev => ({
                   ...prev,
                   [draggingProbe === 'red' ? 'redProbeNode' : 'blackProbeNode']: null,
                   [draggingProbe === 'red' ? 'redProbePosition' : 'blackProbePosition']: worldPos
+              }));
+          }
+      } else if (draggingProbe === 'megger-red' || draggingProbe === 'megger-black') {
+           const probeType = draggingProbe === 'megger-red' ? 'red' : 'black';
+           if (potentialSnapTerminal) {
+              setMegger(prev => ({
+                  ...prev,
+                  [probeType === 'red' ? 'redProbeNode' : 'blackProbeNode']: potentialSnapTerminal,
+                  [probeType === 'red' ? 'redProbePosition' : 'blackProbePosition']: undefined
+              }));
+          } else {
+              setMegger(prev => ({
+                  ...prev,
+                  [probeType === 'red' ? 'redProbeNode' : 'blackProbeNode']: null,
+                  [probeType === 'red' ? 'redProbePosition' : 'blackProbePosition']: worldPos
               }));
           }
       } else if (draggingProbe === 'clamp') {
@@ -1102,11 +1272,11 @@ export default function App() {
 
     const worldPos = screenToWorld(e.clientX, e.clientY);
     
-    // 2. Dragging Probe (Multimeter) - With Magnetic Snap
+    // 2. Dragging Probe (Multimeter or Megger) - With Magnetic Snap
     if (draggingProbe) {
         setProbeDragPos({ x: e.clientX, y: e.clientY }); 
 
-        if (draggingProbe === 'red' || draggingProbe === 'black') {
+        if (draggingProbe === 'red' || draggingProbe === 'black' || draggingProbe === 'megger-red' || draggingProbe === 'megger-black') {
             // Find closest terminal for snap
             let closestTerm: string | null = null;
             let minD = 40; // Snap Radius
@@ -1388,13 +1558,20 @@ export default function App() {
 
     // If carrying a probe, click terminal to Connect
     if (draggingProbe) {
+        const termIdFull = `${compId}:${termId}`;
         if (draggingProbe === 'red' || draggingProbe === 'black') {
-             const termIdFull = `${compId}:${termId}`;
              setMultimeter(prev => ({
                 ...prev,
                 [draggingProbe === 'red' ? 'redProbeNode' : 'blackProbeNode']: termIdFull,
                 [draggingProbe === 'red' ? 'redProbePosition' : 'blackProbePosition']: undefined
             }));
+        } else if (draggingProbe === 'megger-red' || draggingProbe === 'megger-black') {
+             const probeType = draggingProbe === 'megger-red' ? 'red' : 'black';
+             setMegger(prev => ({
+                 ...prev,
+                 [probeType === 'red' ? 'redProbeNode' : 'blackProbeNode']: termIdFull,
+                 [probeType === 'red' ? 'redProbePosition' : 'blackProbePosition']: undefined
+             }));
         }
         setDraggingProbe(null);
         setPotentialSnapTerminal(null);
@@ -1727,6 +1904,67 @@ export default function App() {
 
   const meterRender = getMultimeterRenderData();
 
+  // --- Megger Visual Helper ---
+  const getMeggerRenderData = () => {
+    if (!megger.visible) return null;
+    
+    // Screen coords of the Megger's socket area (Approx based on width 56 = 224px)
+    // Megger width 224px. Terminals near bottom.
+    // Red: 50% left. Black: 80% left? Based on JSX in Megger.tsx
+    // The Megger component is w-56 (224px).
+    // Terminals are in a flex justify-between px-8. 
+    // Left terminal (Red) is approx 40px from left.
+    // Right terminal (Black) is approx 40px from right.
+    const x = megger.position.x;
+    const y = megger.position.y;
+    // Megger Height roughly: 4(bumper)+40(header)+96(screen)+140(controls)+60(terminals) ~ 340px?
+    // Let's approximate bottom terminals relative to top-left of component.
+    const termY = y + 360; 
+    const redTermX = x + 50; 
+    const blackTermX = x + 174; 
+
+    const socketRedWorld = screenToWorld(redTermX, termY);
+    const socketBlackWorld = screenToWorld(blackTermX, termY);
+
+    let redPosWorld: Position | null = null;
+    let blackPosWorld: Position | null = null;
+
+    // Red Probe
+    if (draggingProbe === 'megger-red') {
+         if (potentialSnapTerminal) {
+             const [cId, tId] = potentialSnapTerminal.split(':');
+             redPosWorld = getTerminalPos(cId, tId);
+        } else {
+             redPosWorld = screenToWorld(probeDragPos.x, probeDragPos.y);
+        }
+    } else if (megger.redProbeNode) {
+        const [cId, tId] = megger.redProbeNode.split(':');
+        redPosWorld = getTerminalPos(cId, tId);
+    } else if (megger.redProbePosition) {
+        redPosWorld = megger.redProbePosition;
+    }
+
+    // Black Probe
+    if (draggingProbe === 'megger-black') {
+         if (potentialSnapTerminal) {
+             const [cId, tId] = potentialSnapTerminal.split(':');
+             blackPosWorld = getTerminalPos(cId, tId);
+        } else {
+             blackPosWorld = screenToWorld(probeDragPos.x, probeDragPos.y);
+        }
+    } else if (megger.blackProbeNode) {
+        const [cId, tId] = megger.blackProbeNode.split(':');
+        blackPosWorld = getTerminalPos(cId, tId);
+    } else if (megger.blackProbePosition) {
+        blackPosWorld = megger.blackProbePosition;
+    }
+
+    return { socketRedWorld, socketBlackWorld, redPosWorld, blackPosWorld };
+  };
+
+  const meggerRender = getMeggerRenderData();
+
+
   // Helper for wire cursor
   const getWireCursor = (orientation: 'vertical' | 'horizontal') => {
       if (draggingProbe === 'clamp') return 'crosshair'; // Specific for clamp
@@ -2003,10 +2241,14 @@ export default function App() {
 
           <div className="mb-6">
              <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Tester</h3>
-             <div className="grid grid-cols-1 gap-2">
+             <div className="grid grid-cols-2 gap-2">
                 <button onClick={toggleMultimeter} className={`flex flex-col items-center justify-center p-2 border rounded transition-all bg-white shadow-sm h-24 ${multimeter.visible ? 'border-yellow-500 ring-2 ring-yellow-200' : 'border-gray-200 hover:bg-gray-50 hover:border-blue-300'}`}>
                   <IconMultimeter />
                   <span className="text-xs text-center">Multimeter</span>
+               </button>
+                <button onClick={toggleMegger} className={`flex flex-col items-center justify-center p-2 border rounded transition-all bg-white shadow-sm h-24 ${megger.visible ? 'border-orange-500 ring-2 ring-orange-200' : 'border-gray-200 hover:bg-gray-50 hover:border-blue-300'}`}>
+                  <IconMegger />
+                  <span className="text-xs text-center">Megger</span>
                </button>
              </div>
           </div>
@@ -2373,6 +2615,33 @@ export default function App() {
                       )}
                   </>
                 )}
+
+                 {/* Megger Cables */}
+                {meggerRender && (
+                  <>
+                      {meggerRender.redPosWorld && (
+                         <path 
+                           d={`M ${meggerRender.socketRedWorld.x} ${meggerRender.socketRedWorld.y} Q ${meggerRender.socketRedWorld.x} ${meggerRender.redPosWorld.y + 100} ${meggerRender.redPosWorld.x} ${meggerRender.redPosWorld.y}`} 
+                           fill="none" 
+                           stroke="#dc2626" // Red 600
+                           strokeWidth="4" 
+                           strokeLinecap="round"
+                           className="drop-shadow-sm opacity-90"
+                         />
+                      )}
+                      {meggerRender.blackPosWorld && (
+                         <path 
+                           d={`M ${meggerRender.socketBlackWorld.x} ${meggerRender.socketBlackWorld.y} Q ${meggerRender.socketBlackWorld.x} ${meggerRender.blackPosWorld.y + 100} ${meggerRender.blackPosWorld.x} ${meggerRender.blackPosWorld.y}`} 
+                           fill="none" 
+                           stroke="#1f2937" 
+                           strokeWidth="4" 
+                           strokeLinecap="round"
+                           className="drop-shadow-sm opacity-90"
+                         />
+                      )}
+                  </>
+                )}
+
               </svg>
 
               {/* GLOBAL TERMINAL OVERLAYS (z-40) */}
@@ -2505,6 +2774,55 @@ export default function App() {
                   </div>
               )}
 
+              {/* Megger Probe Heads */}
+              {meggerRender && (
+                  <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-50">
+                      {meggerRender.redPosWorld && (
+                          <div 
+                              className={`absolute w-4 h-24 origin-bottom flex flex-col items-center justify-end ${draggingProbe === 'megger-red' ? 'pointer-events-none' : 'pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-105'} transition-transform`}
+                              style={{ left: meggerRender.redPosWorld.x - 8, top: meggerRender.redPosWorld.y - 96 }}
+                              onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  setDraggingProbe('megger-red');
+                                  setProbeDragPos({ x: e.clientX, y: e.clientY });
+                                  dragStartTime.current = Date.now();
+                                  setMegger(p => ({ ...p, redProbeNode: null }));
+                              }}
+                          >
+                              {/* Grip */}
+                              <div className="w-4 h-16 bg-red-600 rounded-full border border-red-800 shadow-md flex flex-col items-center">
+                                  {/* Distinctive Megger Probe grip */}
+                                  <div className="mt-1 w-full h-1 bg-red-900"></div>
+                                  <div className="mt-2 w-3 h-8 border-t border-b border-red-800/30"></div>
+                              </div>
+                              {/* Metal Tip */}
+                              <div className="w-1 h-8 bg-gray-300 border-x border-gray-400 -mt-1 z-[-1]"></div>
+                          </div>
+                      )}
+                      {meggerRender.blackPosWorld && (
+                          <div 
+                              className={`absolute w-4 h-24 origin-bottom flex flex-col items-center justify-end ${draggingProbe === 'megger-black' ? 'pointer-events-none' : 'pointer-events-auto cursor-grab active:cursor-grabbing hover:scale-105'} transition-transform`}
+                              style={{ left: meggerRender.blackPosWorld.x - 8, top: meggerRender.blackPosWorld.y - 96 }}
+                              onMouseDown={(e) => {
+                                  e.stopPropagation();
+                                  setDraggingProbe('megger-black');
+                                  setProbeDragPos({ x: e.clientX, y: e.clientY });
+                                  dragStartTime.current = Date.now();
+                                  setMegger(p => ({ ...p, blackProbeNode: null }));
+                              }}
+                          >
+                               {/* Grip */}
+                               <div className="w-4 h-16 bg-gray-800 rounded-full border border-black shadow-md flex flex-col items-center">
+                                  <div className="mt-1 w-full h-1 bg-black"></div>
+                                  <div className="mt-2 w-3 h-8 border-t border-b border-gray-600/30"></div>
+                              </div>
+                              {/* Metal Tip */}
+                              <div className="w-1 h-8 bg-gray-300 border-x border-gray-400 -mt-1 z-[-1]"></div>
+                          </div>
+                      )}
+                  </div>
+              )}
+
             </div>
           </main>
 
@@ -2544,6 +2862,25 @@ export default function App() {
                      dragStartTime.current = Date.now();
                      setMultimeter(p => ({ ...p, clampedWireId: null, clampPosition: undefined, clampRotation: undefined }));
                 }}
+            />
+        )}
+
+        {/* Megger UI Overlay */}
+        {megger.visible && (
+            <Megger 
+                state={megger}
+                reading={getMeggerReading()}
+                onPositionChange={(pos) => setMegger(p => ({ ...p, position: pos }))}
+                onProbeDragStart={(e, type) => {
+                    setDraggingProbe(type);
+                    setProbeDragPos({ x: e.clientX, y: e.clientY });
+                    dragStartTime.current = Date.now();
+                    setMegger(p => ({ ...p, [type === 'megger-red' ? 'redProbeNode' : 'blackProbeNode']: null }));
+                }}
+                onModeChange={(mode) => setMegger(p => ({ ...p, mode }))}
+                onTestStart={() => setMegger(p => ({ ...p, isTestActive: true }))}
+                onTestEnd={() => setMegger(p => ({ ...p, isTestActive: false }))}
+                onClose={() => setMegger(p => ({ ...p, visible: false }))}
             />
         )}
       </div>
