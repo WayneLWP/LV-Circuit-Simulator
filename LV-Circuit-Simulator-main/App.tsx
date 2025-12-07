@@ -1,6 +1,5 @@
 
 
-
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { COMPONENT_CATALOG } from './constants';
 import { ComponentInstance, Wire, Position, WireColor, SimulationResult, MultimeterState, MeggerState } from './types';
@@ -116,12 +115,9 @@ const IconCookerSwitch = () => (
 
 const IconRotary = () => (
   <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={StrokeWidth} strokeLinecap="round" strokeLinejoin="round" className={IconStyle}>
-    <rect x="4" y="4" width="16" height="16" rx="2" />
-    <circle cx="12" cy="12" r="5" />
-    <line x1="12" y1="12" x2="15" y2="9" />
-    <circle cx="12" cy="7" r="0.5" fill="currentColor" />
-    <circle cx="17" cy="12" r="0.5" fill="currentColor" />
-    <circle cx="7" cy="12" r="0.5" fill="currentColor" />
+    <rect x="4" y="4" width="16" height="16" rx="2" className="text-slate-500" />
+    <circle cx="12" cy="12" r="6" className="text-yellow-500" fill="currentColor" fillOpacity="0.2" />
+    <rect x="11" y="8" width="2" height="8" rx="1" className="text-red-600" fill="currentColor" />
   </svg>
 );
 
@@ -930,12 +926,24 @@ export default function App() {
       // Logic for different components
       if (c.type === 'SOURCE_AC' || c.type === 'SOURCE_3PH') {
         newState.isOn = !newState.isOn;
-      } else if (c.type === 'MCB' || c.type === 'RCD' || c.type === 'SWITCH_FUSED') {
+      } else if (c.type === 'MCB' || c.type === 'SWITCH_FUSED') {
         if (newState.isTripped) {
             newState.isTripped = false; // Reset
             newState.isOn = false;
         } else {
             newState.isOn = !newState.isOn;
+        }
+      } else if (c.type === 'RCD') {
+        if (subKey === 'test') {
+             newState.isTripped = true;
+             newState.isOn = false;
+        } else {
+             if (newState.isTripped) {
+                 newState.isTripped = false;
+                 newState.isOn = false;
+             } else {
+                 newState.isOn = !newState.isOn;
+             }
         }
       } else if (c.type === 'SWITCH_1G') {
         newState.isOn = !newState.isOn;
@@ -956,7 +964,7 @@ export default function App() {
              newState.sw1 = newState.sw1 === 1 ? 2 : 1;
         }
       } else if (c.type === 'SWITCH_ROTARY') {
-        newState.position = (newState.position % 3) + 1; // Cycle 1 -> 2 -> 3 -> 1
+        newState.isOn = !newState.isOn;
       } else if (c.type === 'SOCKET_SINGLE' || c.type === 'SOCKET_DOUBLE') {
         newState.isOn = !newState.isOn;
       }
@@ -2107,7 +2115,7 @@ export default function App() {
             onClick={clearAll}
             className="flex items-center gap-2 px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm transition-colors"
           >
-            <RotateCcw size={16} /> Reset All
+            <RotateCw size={16} /> Reset All
           </button>
         </div>
       </header>
@@ -2182,7 +2190,7 @@ export default function App() {
                </button>
                <button onClick={() => addComponent('SWITCH_ROTARY')} className="flex flex-col items-center justify-center p-2 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
                   <IconRotary />
-                  <span className="text-xs text-center">Rotary Switch</span>
+                  <span className="text-xs text-center">Rotary Isolator</span>
                </button>
                <button onClick={() => addComponent('SWITCH_FUSED')} className="flex flex-col items-center justify-center p-2 border border-gray-200 rounded hover:bg-gray-50 hover:border-blue-300 transition-all bg-white shadow-sm h-24">
                   <IconSwitchFused />
@@ -2654,10 +2662,10 @@ export default function App() {
                         key={t.id}
                         className="absolute z-40 group cursor-crosshair flex items-center justify-center pointer-events-auto"
                         style={{ 
-                            left: t.x - 12, 
-                            top: t.y - 12, 
-                            width: 24, 
-                            height: 24 
+                            left: t.x - 6, 
+                            top: t.y - 6, 
+                            width: 12, 
+                            height: 12 
                         }}
                         onMouseDown={(e) => handleTerminalMouseDown(e, t.compId, t.termId)}
                         onMouseUp={(e) => handleTerminalMouseUp(e, t.compId, t.termId)}

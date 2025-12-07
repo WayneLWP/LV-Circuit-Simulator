@@ -1,4 +1,5 @@
 
+
 import { ComponentDef, TerminalDef } from './types';
 
 // --- Terminal Layout Helpers ---
@@ -142,24 +143,31 @@ export const COMPONENT_CATALOG: Record<string, ComponentDef> = {
   },
   SWITCH_ROTARY: {
     type: 'SWITCH_ROTARY',
-    name: 'Rotary Switch (3-Pos)',
+    name: '3P+N Isolator 32A',
     category: 'control',
-    width: 80,
-    height: 80,
+    width: 140,
+    height: 140,
     terminals: [
-      { id: 'COM', label: 'COM', x: 40, y: 15, type: 'Generic' },
-      { id: 'L1', label: '1', x: 20, y: 65, type: 'Generic' },
-      { id: 'L2', label: '2', x: 40, y: 65, type: 'Generic' },
-      { id: 'L3', label: '3', x: 60, y: 65, type: 'Generic' },
-      { id: 'E', label: 'E', x: 75, y: 75, type: 'E' },
+      // Inputs (Top)
+      { id: 'L1_IN', label: 'L1 In', x: 25, y: 15, type: 'L' },
+      { id: 'L2_IN', label: 'L2 In', x: 55, y: 15, type: 'L' },
+      { id: 'L3_IN', label: 'L3 In', x: 85, y: 15, type: 'L' },
+      { id: 'N_IN', label: 'N In', x: 115, y: 15, type: 'N' },
+      // Outputs (Bottom)
+      { id: 'L1_OUT', label: 'L1 Out', x: 25, y: 125, type: 'L' },
+      { id: 'L2_OUT', label: 'L2 Out', x: 55, y: 125, type: 'L' },
+      { id: 'L3_OUT', label: 'L3 Out', x: 85, y: 125, type: 'L' },
+      { id: 'N_OUT', label: 'N Out', x: 115, y: 125, type: 'N' },
+      // Earth - Relocated to bottom right
+      { id: 'E', label: 'E', x: 130, y: 130, type: 'E' },
     ],
-    initialState: { position: 1 }, // 1, 2, 3
-    getInternalConnections: (state) => {
-        if (state.position === 1) return [['COM', 'L1']];
-        if (state.position === 2) return [['COM', 'L2']];
-        if (state.position === 3) return [['COM', 'L3']];
-        return [];
-    },
+    initialState: { isOn: false },
+    getInternalConnections: (state) => state.isOn ? [
+        ['L1_IN', 'L1_OUT'],
+        ['L2_IN', 'L2_OUT'],
+        ['L3_IN', 'L3_OUT'],
+        ['N_IN', 'N_OUT']
+    ] : [],
   },
   SWITCH_FUSED: {
     type: 'SWITCH_FUSED',

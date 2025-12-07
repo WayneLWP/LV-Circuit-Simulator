@@ -1,6 +1,5 @@
 
 
-
 import React from 'react';
 import { ComponentInstance, TerminalDef } from '../types';
 import { COMPONENT_CATALOG } from '../constants';
@@ -331,6 +330,42 @@ export const ComponentNode: React.FC<Props> = ({
                        <circle cx="120" cy="20" r="3" fill="white" stroke={STROKE} />
                    </SymbolWrapper>
                );
+            case 'SWITCH_ROTARY':
+                return (
+                   <SymbolWrapper {...wrapperProps}>
+                       {/* 4 Poles */}
+                       <line x1="25" y1="15" x2="25" y2="40" stroke={STROKE} strokeWidth={WIDTH} />
+                       <line x1="25" y1="100" x2="25" y2="125" stroke={STROKE} strokeWidth={WIDTH} />
+                       
+                       <line x1="55" y1="15" x2="55" y2="40" stroke={STROKE} strokeWidth={WIDTH} />
+                       <line x1="55" y1="100" x2="55" y2="125" stroke={STROKE} strokeWidth={WIDTH} />
+
+                       <line x1="85" y1="15" x2="85" y2="40" stroke={STROKE} strokeWidth={WIDTH} />
+                       <line x1="85" y1="100" x2="85" y2="125" stroke={STROKE} strokeWidth={WIDTH} />
+
+                       <line x1="115" y1="15" x2="115" y2="40" stroke={STROKE} strokeWidth={WIDTH} />
+                       <line x1="115" y1="100" x2="115" y2="125" stroke={STROKE} strokeWidth={WIDTH} />
+
+                       {/* Switch Blades */}
+                       {isOn ? (
+                           <>
+                              <line x1="25" y1="40" x2="25" y2="100" stroke={STROKE} strokeWidth={WIDTH} />
+                              <line x1="55" y1="40" x2="55" y2="100" stroke={STROKE} strokeWidth={WIDTH} />
+                              <line x1="85" y1="40" x2="85" y2="100" stroke={STROKE} strokeWidth={WIDTH} />
+                              <line x1="115" y1="40" x2="115" y2="100" stroke={STROKE} strokeWidth={WIDTH} />
+                           </>
+                       ) : (
+                           <>
+                              <line x1="25" y1="40" x2="40" y2="80" stroke={STROKE} strokeWidth={WIDTH} />
+                              <line x1="55" y1="40" x2="70" y2="80" stroke={STROKE} strokeWidth={WIDTH} />
+                              <line x1="85" y1="40" x2="100" y2="80" stroke={STROKE} strokeWidth={WIDTH} />
+                              <line x1="115" y1="40" x2="130" y2="80" stroke={STROKE} strokeWidth={WIDTH} />
+                           </>
+                       )}
+                       {/* Dashed Link */}
+                       <line x1="30" y1="70" x2="120" y2="70" stroke={STROKE} strokeWidth={1} strokeDasharray="4 2" />
+                   </SymbolWrapper>
+                );
           default:
               // Fallback generic box
               return (
@@ -425,32 +460,36 @@ export const ComponentNode: React.FC<Props> = ({
           </div>
         );
       case 'SWITCH_ROTARY':
-        const rPos = data.state.position; // 1, 2, 3
-        const rotationMap: Record<number, number> = { 1: -50, 2: 0, 3: 50 };
-        const rotation = rotationMap[rPos] || -50;
-        
         return (
           <div 
-            className="w-full h-full bg-white border border-gray-300 rounded shadow-sm relative cursor-pointer"
+            className="w-full h-full bg-gray-200 border border-gray-400 rounded-sm shadow-md relative flex flex-col items-center justify-center select-none"
             onClick={(e) => { e.stopPropagation(); onToggleState(); }}
           >
-              <div className="absolute inset-0 flex items-center justify-center">
-                  {/* Knob Body */}
-                  <div 
-                    className="w-10 h-10 rounded-full border-2 border-gray-400 bg-gray-100 shadow-sm flex items-center justify-center transition-transform duration-200"
-                    style={{ transform: `rotate(${rotation}deg)`}}
-                  >
-                      {/* Knob Indicator Line */}
-                      <div className="w-1 h-4 bg-gray-600 rounded-full absolute top-1"></div>
-                  </div>
-              </div>
-              
-              {/* Position Labels */}
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full pointer-events-none">
-                 <div className="absolute top-[20%] left-[25%] text-[8px] font-bold text-gray-400">1</div>
-                 <div className="absolute top-[12%] left-1/2 -translate-x-1/2 text-[8px] font-bold text-gray-400">2</div>
-                 <div className="absolute top-[20%] right-[25%] text-[8px] font-bold text-gray-400">3</div>
-              </div>
+             {/* Screws */}
+             <div className="absolute top-2 left-2 w-2 h-2 rounded-full border border-gray-400 bg-gray-100"></div>
+             <div className="absolute top-2 right-2 w-2 h-2 rounded-full border border-gray-400 bg-gray-100"></div>
+             <div className="absolute bottom-2 left-2 w-2 h-2 rounded-full border border-gray-400 bg-gray-100"></div>
+             <div className="absolute bottom-2 right-2 w-2 h-2 rounded-full border border-gray-400 bg-gray-100"></div>
+
+             {/* Yellow Plate */}
+             <div className="w-20 h-24 bg-yellow-400 border border-yellow-600 rounded flex flex-col items-center justify-center relative shadow-sm">
+                 <div className="absolute top-1 text-[8px] font-black tracking-widest text-black/70">MAIN SWITCH</div>
+                 
+                 {/* Knob Base */}
+                 <div className="w-16 h-16 rounded-full border-4 border-red-800 bg-red-600 shadow-md flex items-center justify-center relative transition-transform duration-200"
+                      style={{ transform: `rotate(${isOn ? 90 : 0}deg)` }}
+                 >
+                     {/* Handle Bar */}
+                     <div className="w-4 h-20 bg-red-700 border-x border-red-900 absolute rounded-sm shadow-sm"></div>
+                     <div className="w-2 h-16 bg-red-500 absolute rounded-full opacity-30"></div>
+                 </div>
+
+                 {/* Labels */}
+                 <div className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] font-bold">0</div>
+                 <div className="absolute top-2 left-1/2 -translate-x-1/2 text-[10px] font-bold">I</div>
+             </div>
+             
+             <div className="absolute bottom-4 text-[8px] font-mono text-gray-500">32A 415V</div>
           </div>
         );
       case 'SWITCH_FUSED':
@@ -520,15 +559,122 @@ export const ComponentNode: React.FC<Props> = ({
                 </div>
             </div>
         );
-      case 'MCB':
       case 'RCD':
         return (
-           <div 
-            className={`w-6 h-10 border rounded cursor-pointer flex flex-col items-center justify-center ${isTripped ? 'bg-red-100' : (isOn ? 'bg-green-100' : 'bg-gray-200')}`}
-            onClick={(e) => { e.stopPropagation(); onToggleState(); }}
-           >
-              <span className="text-[8px] font-mono mb-1">{isTripped ? 'TRIP' : (isOn ? 'ON' : 'OFF')}</span>
-              <div className={`w-4 h-4 bg-black rounded-sm transition-transform ${isOn && !isTripped ? '-translate-y-1' : 'translate-y-1'}`}></div>
+           <div className="w-full h-full bg-[#f3f4f6] border border-gray-400 rounded-sm shadow-md flex flex-col relative select-none">
+            {/* Top Screws Visual */}
+            <div className="absolute top-1 left-0 w-full flex justify-around pointer-events-none">
+                 <div className="w-3 h-3 rounded-full bg-gray-300 border border-gray-500 flex items-center justify-center shadow-inner"><div className="w-2 h-0.5 bg-gray-600 -rotate-45"></div></div>
+                 <div className="w-3 h-3 rounded-full bg-gray-300 border border-gray-500 flex items-center justify-center shadow-inner"><div className="w-2 h-0.5 bg-gray-600 -rotate-45"></div></div>
+            </div>
+
+            {/* Red Stripe with Name and Rating */}
+            <div className="h-4 w-full bg-[#ff0000] flex items-center px-2 mt-5 justify-between">
+                <span className="text-[8px] font-black text-white tracking-tight">RCD</span>
+                <span className="text-[6px] font-bold text-white/90">{data.properties?.rating || def.rating}A</span>
+            </div>
+            
+            <div className="flex-1 flex flex-col px-2 pt-1 relative">
+                <div className="flex justify-between items-start">
+                    {/* Test Button */}
+                    <div className="flex flex-col items-center ml-1">
+                         <button 
+                            className="w-8 h-4 bg-gray-200 border border-gray-400 rounded-full shadow-sm active:shadow-inner active:bg-gray-300 flex items-center justify-center mb-0.5 hover:bg-white transition-colors"
+                            onClick={(e) => { e.stopPropagation(); onToggleState('test'); }}
+                            title="Function Test"
+                         >
+                            <span className="text-[6px] font-bold text-gray-600">T</span>
+                         </button>
+                         <span className="text-[5px] text-gray-500 font-bold">TEST</span>
+                    </div>
+
+                    {/* Indicator Window */}
+                    <div className="mt-1 mr-1 w-5 h-3 bg-gray-800 rounded-sm border border-gray-500 overflow-hidden relative shadow-inner">
+                         {/* Green = OFF/Safe (Open), Red = ON/Live (Closed) */}
+                         <div className={`absolute inset-0 transition-colors duration-200 ${isOn ? 'bg-red-600' : 'bg-green-500'}`}></div>
+                    </div>
+                </div>
+
+                {/* Model Text */}
+                <div className="mt-2 flex flex-col items-center">
+                    <span className="text-[8px] font-bold text-gray-800 w-full text-left ml-2">F202 AC</span>
+                    <div className="flex flex-col items-start w-full ml-2">
+                        <span className="text-[6px] text-gray-600 leading-tight">I<sub>Δn</sub>=0.03A</span>
+                        <span className="text-[6px] text-gray-600 leading-tight">U<sub>n</sub>=230V~</span>
+                    </div>
+                    {/* Schematic Placeholder */}
+                    <div className="mt-1 w-8 h-5 border border-gray-400 opacity-40 self-start ml-2"></div> 
+                </div>
+            </div>
+
+            {/* Switch Handle Area */}
+            <div className="absolute bottom-10 left-0 w-full flex justify-center z-10">
+                 <div 
+                    className="w-10 h-16 bg-gray-200 rounded border border-gray-300 shadow-inner relative cursor-pointer"
+                    onClick={(e) => { e.stopPropagation(); onToggleState(); }}
+                 >
+                     {/* Blue Switch Toggle - Up is ON */}
+                     <div className={`absolute left-0.5 right-0.5 h-6 bg-[#00529c] rounded border border-blue-900 shadow-md transition-all duration-200 flex items-center justify-center ${isOn ? 'top-1' : 'bottom-1'}`}>
+                          <div className="w-4 h-0.5 bg-blue-900 opacity-30 rounded-full"></div>
+                     </div>
+                 </div>
+            </div>
+
+            {/* Bottom Screws Visual */}
+            <div className="absolute bottom-1 left-0 w-full flex justify-around pointer-events-none">
+                 <div className="w-3 h-3 rounded-full bg-gray-300 border border-gray-500 flex items-center justify-center shadow-inner"><div className="w-2 h-0.5 bg-gray-600 -rotate-45"></div></div>
+                 <div className="w-3 h-3 rounded-full bg-gray-300 border border-gray-500 flex items-center justify-center shadow-inner"><div className="w-2 h-0.5 bg-gray-600 -rotate-45"></div></div>
+            </div>
+           </div>
+        );
+      case 'MCB':
+        return (
+           <div className="w-full h-full bg-[#f3f4f6] border border-gray-400 rounded-sm shadow-md flex flex-col relative select-none">
+            {/* Top Screws Visual */}
+            <div className="absolute top-1 left-0 w-full flex justify-center pointer-events-none">
+                 <div className="w-3 h-3 rounded-full bg-gray-300 border border-gray-500 flex items-center justify-center shadow-inner"><div className="w-2 h-0.5 bg-gray-600 -rotate-45"></div></div>
+            </div>
+
+            {/* Red Stripe with Name and Rating */}
+            <div className="h-4 w-full bg-[#ff0000] flex items-center px-1 mt-5 justify-between">
+                <span className="text-[8px] font-black text-white tracking-tight">MCB</span>
+                <span className="text-[6px] font-bold text-white/90">{data.properties?.rating || def.rating}A</span>
+            </div>
+            
+            <div className="flex-1 flex flex-col px-1 pt-2 relative items-center">
+                {/* Indicator Window */}
+                <div className="w-8 h-3 bg-gray-800 rounded-sm border border-gray-500 overflow-hidden relative shadow-inner mb-1">
+                     {/* Green = OFF/Safe (Open), Red = ON/Live (Closed) */}
+                     <div className={`absolute inset-0 transition-colors duration-200 ${isOn && !isTripped ? 'bg-red-600' : 'bg-green-500'}`}></div>
+                </div>
+
+                {/* Model Text */}
+                <div className="flex flex-col items-center w-full">
+                    <span className="text-[10px] font-bold text-gray-800 leading-none">B{data.properties?.rating || def.rating}</span>
+                    <span className="text-[6px] text-gray-600 leading-tight">230/400V~</span>
+                    <div className="border border-black px-0.5 mt-0.5"><span className="text-[5px] block leading-none">6000</span></div>
+                    <div className="mt-1 w-4 h-4 border border-gray-400 opacity-40"></div> 
+                </div>
+            </div>
+
+            {/* Switch Handle Area */}
+            <div className="absolute bottom-10 left-0 w-full flex justify-center z-10">
+                 <div 
+                    className="w-8 h-12 bg-gray-200 rounded border border-gray-300 shadow-inner relative cursor-pointer"
+                    onClick={(e) => { e.stopPropagation(); onToggleState(); }}
+                 >
+                     {/* Black Switch Toggle - Up is ON */}
+                     <div className={`absolute left-0.5 right-0.5 h-5 bg-black rounded border border-gray-700 shadow-md transition-all duration-200 flex items-center justify-center ${isOn && !isTripped ? 'top-0.5' : (isTripped ? 'top-[40%]' : 'bottom-0.5')}`}>
+                          {/* Ridge */}
+                          <div className="w-6 h-0.5 bg-gray-700 opacity-50 rounded-full"></div>
+                     </div>
+                 </div>
+            </div>
+
+            {/* Bottom Screws Visual */}
+            <div className="absolute bottom-1 left-0 w-full flex justify-center pointer-events-none">
+                 <div className="w-3 h-3 rounded-full bg-gray-300 border border-gray-500 flex items-center justify-center shadow-inner"><div className="w-2 h-0.5 bg-gray-600 -rotate-45"></div></div>
+            </div>
            </div>
         );
       case 'SOCKET_SINGLE':
