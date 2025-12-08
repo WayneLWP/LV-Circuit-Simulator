@@ -158,7 +158,7 @@ export const COMPONENT_CATALOG: Record<string, ComponentDef> = {
       { id: 'L2_OUT', label: 'L2 Out', x: 55, y: 125, type: 'L' },
       { id: 'L3_OUT', label: 'L3 Out', x: 85, y: 125, type: 'L' },
       { id: 'N_OUT', label: 'N Out', x: 115, y: 125, type: 'N' },
-      // Earth - Relocated to bottom right
+      // Earth - Moved to bottom right corner
       { id: 'E', label: 'E', x: 130, y: 130, type: 'E' },
     ],
     initialState: { isOn: false },

@@ -1,7 +1,7 @@
 import React from 'react';
 import { ComponentInstance, Wire, WireColor } from '../types';
 import { COMPONENT_CATALOG } from '../constants';
-import { Trash2, Zap, Tag, Activity, Pipette, Disc, X } from 'lucide-react';
+import { Trash2, Zap, Tag, Activity, Pipette, Disc, X, Earth } from 'lucide-react';
 
 interface Props {
   selectedCompId: string | null;
@@ -100,6 +100,7 @@ export const PropertiesPanel: React.FC<Props> = ({
                         const def = COMPONENT_CATALOG[selectedComp.type];
                         const isProtection = def.category === 'protection' || selectedComp.type === 'SWITCH_FUSED';
                         const isLoad = def.category === 'load';
+                        const isSupply = selectedComp.type === 'SOURCE_AC' || selectedComp.type === 'SOURCE_3PH';
                         
                         return (
                             <>
@@ -194,6 +195,30 @@ export const PropertiesPanel: React.FC<Props> = ({
                                                     {isProtection ? 'A' : 'W'}
                                                 </span>
                                             </div>
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Supply Earthing */}
+                                {isSupply && (
+                                    <>
+                                        <div className="w-px h-8 bg-gray-200 shrink-0 mx-2"></div>
+                                        <div className="flex flex-col gap-1 shrink-0">
+                                            <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                                                <Earth size={10} /> Earthing
+                                            </span>
+                                            <select
+                                                value={selectedComp.properties?.earthing || 'TN-C-S'}
+                                                onChange={(e) => onUpdateComponent(selectedComp.id, prev => ({
+                                                    properties: { ...prev.properties, earthing: e.target.value }
+                                                }))}
+                                                className="h-7 text-xs border border-gray-300 rounded px-2 focus:border-blue-500 focus:outline-none bg-gray-50 focus:bg-white transition-colors cursor-pointer"
+                                            >
+                                                <option value="TN-C-S">TN-C-S (PME)</option>
+                                                <option value="TN-S">TN-S</option>
+                                                <option value="TT">TT</option>
+                                                <option value="IT">IT</option>
+                                            </select>
                                         </div>
                                     </>
                                 )}

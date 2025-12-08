@@ -13,18 +13,20 @@ export const runSimulation = (
 ): SimulationResult => {
   const energizedComponents = new Set<string>();
   const trippedBreakers = new Set<string>();
-  const uniqueErrors = new Set<string>(); // Use Set to prevent duplicate messages
+  const errors: string[] = [];
   const flowingWires = new Map<string, boolean>();
+  // Updated potential types: 'L' (generic single phase), 'L1', 'L2', 'L3', 'N', 'E'
   const nodePotentials = new Map<string, string>();
 
-  // 1. Build Adjacency Graph
+  // 1. Build Adjacency Graph (High Impedance / Insulation Resistance View)
+  // Loads are OPEN circuits here. Used for Short Circuit detection.
   const graph = new Map<NodeId, NodeId[]>();
 
-  const addEdge = (n1: NodeId, n2: NodeId) => {
-    if (!graph.has(n1)) graph.set(n1, []);
-    if (!graph.has(n2)) graph.set(n2, []);
-    graph.get(n1)!.push(n2);
-    graph.get(n2)!.push(n1);
+  const addEdge = (n1: NodeId, n2: NodeId, targetGraph: Map<NodeId, NodeId[]> = graph) => {
+    if (!targetGraph.has(n1)) targetGraph.set(n1, []);
+    if (!targetGraph.has(n2)) targetGraph.set(n2, []);
+    targetGraph.get(n1)!.push(n2);
+    targetGraph.get(n2)!.push(n1);
   };
 
   // Add Wire Connections
@@ -40,6 +42,17 @@ export const runSimulation = (
       internals.forEach(([t1, t2]) => {
         addEdge(getNodeId(comp.id, t1), getNodeId(comp.id, t2));
       });
+    }
+
+    // --- Special Logic for Supply Earthing Arrangements ---
+    if (comp.type === 'SOURCE_AC' || comp.type === 'SOURCE_3PH') {
+        const earthing = comp.properties?.earthing || 'TN-C-S';
+        
+        if (earthing === 'TN-C-S') {
+            // TN-C-S (PME): Neutral and Earth are combined (PEN) at the source.
+            // Simulating a link between N and E terminals.
+            addEdge(getNodeId(comp.id, 'N'), getNodeId(comp.id, 'E'));
+        }
     }
 
     // --- Special Logic for Plugged Connections ---
@@ -71,236 +84,220 @@ export const runSimulation = (
     }
   });
 
-  // 2. Identify Sources and Root Nodes
+  // 1b. Build RCD Graph (Low Impedance / Circuit Path View)
+  // Loads are CLOSED circuits (Resistors) here. Used for RCD Imbalance detection (Borrowed Neutral, etc).
+  const rcdGraph = new Map<NodeId, NodeId[]>();
+  
+  // Clone basic structure
+  for (const [node, neighbors] of graph.entries()) {
+      rcdGraph.set(node, [...neighbors]);
+  }
+
+  // Helper to add to RCD graph specifically
+  const addRcdEdge = (n1: NodeId, n2: NodeId) => {
+      addEdge(n1, n2, rcdGraph);
+  };
+
+  // Add Internal Load Connections (Bridging L-N)
+  components.forEach(comp => {
+      const def = COMPONENT_CATALOG[comp.type];
+      if (def.category === 'load') {
+          // Heuristic: Connect first 'L' type terminal to first 'N' type terminal
+          const lTerm = def.terminals.find(t => t.id === 'L' || t.id === 'L_IN' || t.id === 'L1');
+          const nTerm = def.terminals.find(t => t.id === 'N' || t.id === 'N_IN');
+          
+          if (lTerm && nTerm) {
+              addRcdEdge(getNodeId(comp.id, lTerm.id), getNodeId(comp.id, nTerm.id));
+          }
+      }
+  });
+
+
+  // 2. Identify Sources
   const activeSources = components.filter(c => 
     (c.type === 'SOURCE_AC' || c.type === 'SOURCE_3PH') && c.state.isOn
   );
 
   if (activeSources.length === 0) {
-    return { energizedComponents, trippedBreakers, errors: [], flowingWires, nodePotentials };
+    return { energizedComponents, trippedBreakers, errors, flowingWires, nodePotentials };
   }
 
+  // Identify all Source Terminals (The "Grid" / "Ground")
+  const sourceTargets = new Set<string>();
+  activeSources.forEach(src => {
+      const def = COMPONENT_CATALOG[src.type];
+      def.terminals.forEach(t => {
+          sourceTargets.add(getNodeId(src.id, t.id));
+      });
+  });
+
+  // 3. Propagate Potentials & Calculate Distance (BFS)
+  // We use the basic 'graph' (Loads Open) to determine energization and shorts.
+  
+  const explore = (startNodes: NodeId[], potentialType: string): { visited: Set<NodeId>, dist: Map<NodeId, number> } => {
+    const visited = new Set<NodeId>();
+    const dist = new Map<NodeId, number>();
+    const queue: NodeId[] = [];
+    
+    startNodes.forEach(node => {
+        visited.add(node);
+        dist.set(node, 0);
+        nodePotentials.set(node, potentialType);
+        queue.push(node);
+    });
+
+    while (queue.length > 0) {
+      const curr = queue.shift()!;
+      const d = dist.get(curr)!;
+      const neighbors = graph.get(curr) || [];
+      for (const next of neighbors) {
+        if (!visited.has(next)) {
+          visited.add(next);
+          dist.set(next, d + 1);
+          nodePotentials.set(next, potentialType);
+          queue.push(next);
+        }
+      }
+    }
+    return { visited, dist };
+  };
+
+  // Collect seeds from all active sources
   const liveSeeds: NodeId[] = [];
+  const l1Seeds: NodeId[] = [];
+  const l2Seeds: NodeId[] = [];
+  const l3Seeds: NodeId[] = [];
   const neutralSeeds: NodeId[] = [];
   const earthSeeds: NodeId[] = [];
 
-  // Helper to trace connectivity from roots
-  const findConnectedSet = (roots: NodeId[]): Set<NodeId> => {
-      const visited = new Set<NodeId>();
-      const queue = [...roots];
-      roots.forEach(r => visited.add(r));
-      
-      while(queue.length > 0) {
-          const curr = queue.shift()!;
-          const neighbors = graph.get(curr) || [];
-          for (const next of neighbors) {
-              if (!visited.has(next)) {
-                  visited.add(next);
-                  queue.push(next);
-              }
-          }
-      }
-      return visited;
-  };
-
-  // Collect Source Roots
   activeSources.forEach(src => {
       if (src.type === 'SOURCE_AC') {
           liveSeeds.push(getNodeId(src.id, 'L'));
           neutralSeeds.push(getNodeId(src.id, 'N'));
           earthSeeds.push(getNodeId(src.id, 'E'));
       } else if (src.type === 'SOURCE_3PH') {
-          liveSeeds.push(getNodeId(src.id, 'L1'), getNodeId(src.id, 'L2'), getNodeId(src.id, 'L3'));
+          l1Seeds.push(getNodeId(src.id, 'L1'));
+          l2Seeds.push(getNodeId(src.id, 'L2'));
+          l3Seeds.push(getNodeId(src.id, 'L3'));
           neutralSeeds.push(getNodeId(src.id, 'N'));
           earthSeeds.push(getNodeId(src.id, 'E'));
       }
       energizedComponents.add(src.id);
   });
 
-  // Also include Earthing Bars as roots for "Grounded" check
-  components.filter(c => c.type === 'BAR_EARTH').forEach(c => {
-      // Treat entire bar as grounded if connected to source (handled by graph), 
-      // but for "Short to Earth", anything connected to any earth terminal is relevant.
-      // However, we strictly care about return paths to source earth.
-      // So we stick to propagation from Source E.
-  });
+  const l1Result = explore(l1Seeds, 'L1');
+  const l2Result = explore(l2Seeds, 'L2');
+  const l3Result = explore(l3Seeds, 'L3');
+  const lResult = explore(liveSeeds, 'L');
+  const nResult = explore(neutralSeeds, 'N');
+  const eResult = explore(earthSeeds, 'E');
 
-  // 3. Propagate Potentials
-  const groundedNodes = findConnectedSet(earthSeeds);
-  const neutralReturnNodes = findConnectedSet(neutralSeeds);
-  // Note: 'liveNodes' in a global sense is messy with breakers. We calculate potential locally below.
+  const neutralNodes = nResult.visited;
+  const earthNodes = eResult.visited;
+  const allLiveNodes = new Set([...l1Result.visited, ...l2Result.visited, ...l3Result.visited, ...lResult.visited]);
+  const combinedLiveDist = new Map([...l1Result.dist, ...l2Result.dist, ...l3Result.dist, ...lResult.dist]);
+  const nDist = nResult.dist;
 
-  // 4. Check Breaker Faults (Downstream Checks)
-  
-  // Helper: BFS from a start node, BUT refuse to cross a specific 'blocked' node.
-  // Returns true if targetSet is reached.
-  const checksDownstreamConnection = (startNode: NodeId, blockedNode: NodeId, targetSet: Set<NodeId>): boolean => {
-      const queue = [startNode];
-      const visited = new Set<NodeId>([startNode]);
+  // 4. Check for Faults (Dead Short L-N or L-E)
+  const shortL1L2 = [...l1Result.visited].some(n => l2Result.visited.has(n));
+  const shortL2L3 = [...l2Result.visited].some(n => l3Result.visited.has(n));
+  const shortL3L1 = [...l3Result.visited].some(n => l1Result.visited.has(n));
+  const shortLN = [...allLiveNodes].some(node => neutralNodes.has(node));
+  const shortLE = [...allLiveNodes].some(node => earthNodes.has(node));
+
+  if (shortL1L2 || shortL2L3 || shortL3L1) errors.push("Phase-Phase Short Circuit!");
+  if (shortLN) errors.push("Short Circuit Detected (L-N)!");
+  if (shortLE) errors.push("Earth Fault Detected (L-E)!");
+
+  // --- Helper: Path finding with avoidance ---
+  const hasPathToSource = (startNode: string, avoidNodes: string[], graphToUse: Map<string, string[]>): boolean => {
+      const q = [startNode];
+      const visited = new Set<string>([startNode, ...avoidNodes]);
       
-      while(queue.length > 0) {
-          const curr = queue.shift()!;
-          if (targetSet.has(curr)) return true;
-          
-          const neighbors = graph.get(curr) || [];
+      while (q.length > 0) {
+          const curr = q.shift()!;
+          if (sourceTargets.has(curr)) return true;
+
+          const neighbors = graphToUse.get(curr) || [];
           for (const next of neighbors) {
-              if (next !== blockedNode && !visited.has(next)) {
+              if (!visited.has(next)) {
                   visited.add(next);
-                  queue.push(next);
+                  q.push(next);
               }
           }
       }
       return false;
   };
 
-  components.forEach(c => {
-      if (c.state.isOn) {
-          // --- RCD Logic (Earth Leakage & Short Circuit) ---
-          if (c.type === 'RCD') {
-              const lOut = getNodeId(c.id, 'L_OUT');
-              const lIn = getNodeId(c.id, 'L_IN');
-              const nOut = getNodeId(c.id, 'N_OUT');
-              const nIn = getNodeId(c.id, 'N_IN');
-
-              // 1. Earth Fault Check (Leakage to Earth)
-              // We block the path back to supply to ensure we are checking the downstream circuit.
-              const leakageL = checksDownstreamConnection(lOut, lIn, groundedNodes);
-              const leakageN = checksDownstreamConnection(nOut, nIn, groundedNodes);
-
-              if (leakageL || leakageN) {
-                  trippedBreakers.add(c.id);
-                  uniqueErrors.add("Earth Fault");
-              }
-
-              // 2. Short Circuit Check (L to N)
-              // Even though RCDs primarily detect earth faults, in this sim (and RCBOs) they trip on shorts.
-              // Check if L_OUT connects to Neutral Return Nodes (which includes N_IN -> Source N).
-              // We block L_IN to ensure the path is downstream (L_OUT -> Load -> N_OUT -> N_IN).
-              const shortLN = checksDownstreamConnection(lOut, lIn, neutralReturnNodes);
-              if (shortLN) {
-                  trippedBreakers.add(c.id);
-                  uniqueErrors.add("Short Circuit");
-              }
-          }
-          
-          // --- MCB / Fused Switch Logic (Short Circuit) ---
-          if (c.type === 'MCB' || c.type === 'SWITCH_FUSED') {
-              let outTerm = 'OUT'; 
-              let inTerm = 'IN';
-              if (c.type === 'SWITCH_FUSED') { outTerm = 'L_OUT'; inTerm = 'L_IN'; }
-
-              const outNode = getNodeId(c.id, outTerm);
-              const inNode = getNodeId(c.id, inTerm);
-
-              // Check Short to Neutral (L-N Short)
-              const shortToNeutral = checksDownstreamConnection(outNode, inNode, neutralReturnNodes);
-              // Check Short to Earth (L-E Short - also an overcurrent condition)
-              const shortToEarth = checksDownstreamConnection(outNode, inNode, groundedNodes);
-
-              if (shortToNeutral || shortToEarth) {
-                  trippedBreakers.add(c.id);
-                  uniqueErrors.add("Short Circuit");
-              }
-          }
+  // --- RCD Logic (Residual Current) ---
+  // Runs ALWAYS to catch imbalances/leakages/N-E faults, regardless of Short Circuits.
+  // Uses rcdGraph which sees through Loads.
+  components.filter(c => c.type === 'RCD' && c.state.isOn).forEach(rcd => {
+      const lIn = getNodeId(rcd.id, 'L_IN');
+      const nIn = getNodeId(rcd.id, 'N_IN');
+      const lOut = getNodeId(rcd.id, 'L_OUT');
+      const nOut = getNodeId(rcd.id, 'N_OUT');
+      
+      const avoid = [lIn, nIn];
+      
+      // Check 1: Leakage from Line side
+      // If L_OUT can find a way back to Source that DOESN'T go through L_IN or N_IN...
+      // It implies current bypasses the RCD summation.
+      if (hasPathToSource(lOut, avoid, rcdGraph)) {
+          trippedBreakers.add(rcd.id);
+          errors.push("RCD Trip: Imbalance (Line Leakage/Borrowed Neutral)!");
+      }
+      // Check 2: Imbalance from Neutral side
+      // If N_OUT is connected to Source/Earth downstream, or receiving current from another circuit.
+      else if (hasPathToSource(nOut, avoid, rcdGraph)) {
+          trippedBreakers.add(rcd.id);
+          errors.push("RCD Trip: Imbalance (Neutral Fault/Borrowed Neutral)!");
       }
   });
 
-  // Stop simulation if breakers tripped
-  if (trippedBreakers.size > 0) {
-      return { energizedComponents: new Set(), trippedBreakers, errors: Array.from(uniqueErrors), flowingWires: new Map(), nodePotentials: new Map() };
-  }
+  // --- MCB Logic (Overcurrent) ---
+  // Only runs if a global dead short is detected.
+  // Uses standard graph (Loads Open) to find the low-impedance path.
+  if (shortLN || shortLE || shortL1L2 || shortL2L3 || shortL3L1) {
+    components.filter(c => (c.type === 'MCB' || c.type === 'SWITCH_FUSED') && c.state.isOn).forEach(dev => {
+        const outTerm = dev.type === 'MCB' ? 'OUT' : 'L_OUT';
+        const inTerm = dev.type === 'MCB' ? 'IN' : 'L_IN';
+        
+        const nodeOut = getNodeId(dev.id, outTerm);
+        const nodeIn = getNodeId(dev.id, inTerm);
 
-  // 5. Determine Energized Loads & Flow (Standard Simulation)
-  
-  // Re-run simple potential propagation for visualization
-  // Use generic potential tags
-  const potentialMap = new Map<string, string>();
-  groundedNodes.forEach(n => potentialMap.set(n, 'E'));
-  neutralReturnNodes.forEach(n => potentialMap.set(n, 'N'));
-  
-  // For Live, we need to propagate through closed switches from Source L
-  // We can't just use a global set because breakers might be OFF (handled by graph), 
-  // but we want to know specific phases if possible.
-  
-  // Simple L propagation
-  const lQueue = [...liveSeeds];
-  const lVisited = new Set<NodeId>();
-  lQueue.forEach(n => {
-      lVisited.add(n);
-      potentialMap.set(n, 'L');
-  });
-  
-  // Calculate distance for flow animation direction
-  const distMap = new Map<NodeId, number>();
-  lQueue.forEach(n => distMap.set(n, 0));
-
-  while(lQueue.length > 0) {
-      const curr = lQueue.shift()!;
-      const d = distMap.get(curr)!;
-      const neighbors = graph.get(curr) || [];
-      for(const next of neighbors) {
-          if (!lVisited.has(next)) {
-              lVisited.add(next);
-              potentialMap.set(next, 'L'); // Simplified single phase L
-              distMap.set(next, d + 1);
-              lQueue.push(next);
-          }
-      }
-  }
-
-  // Neutral distance for return flow
-  const nQueue = [...neutralSeeds];
-  const nVisited = new Set<NodeId>();
-  const nDistMap = new Map<NodeId, number>();
-  nQueue.forEach(n => {
-      nVisited.add(n);
-      nDistMap.set(n, 0);
-  });
-  
-  while(nQueue.length > 0) {
-      const curr = nQueue.shift()!;
-      const d = nDistMap.get(curr)!;
-      const neighbors = graph.get(curr) || [];
-      for(const next of neighbors) {
-          if (!nVisited.has(next)) {
-              nVisited.add(next);
-              nDistMap.set(next, d + 1);
-              nQueue.push(next);
-          }
-      }
-  }
-
-  // Check Component Energization
-  // We only enable flow for wires that supply an ACTIVELY ENERGIZED LOAD.
-  // This avoids showing flow in open circuits (which have potential but no current).
-  const loadLNodes = new Set<NodeId>();
-  const loadNNodes = new Set<NodeId>();
-
-  components.forEach(comp => {
-    let isEnergized = false;
-    const checkPhases = (lTerm: string, nTerm: string) => {
-        const lNode = getNodeId(comp.id, lTerm);
-        const nNode = getNodeId(comp.id, nTerm);
-        return lVisited.has(lNode) && nVisited.has(nNode);
-    };
-
-    const def = COMPONENT_CATALOG[comp.type];
-    
-    // Only loads consume power
-    if (def.category === 'load' || comp.type === 'SWITCH_COOKER') {
-        if (comp.type === 'SWITCH_COOKER') {
-             if (checkPhases('L_IN', 'N_IN')) {
-                 isEnergized = true;
-                 loadLNodes.add(getNodeId(comp.id, 'L_IN'));
-                 loadNNodes.add(getNodeId(comp.id, 'N_IN'));
-             }
-        } else {
-             if (checkPhases('L', 'N')) {
-                 isEnergized = true;
-                 loadLNodes.add(getNodeId(comp.id, 'L'));
-                 loadNNodes.add(getNodeId(comp.id, 'N'));
+        // Check L-N Short (Downstream)
+        if (hasPathToSource(nodeOut, [nodeIn], graph) && shortLN) {
+             trippedBreakers.add(dev.id);
+             errors.push(`${dev.type} Trip: Short Circuit!`);
+        }
+        
+        // Check L-E Short
+        if (shortLE) {
+             if (hasPathToSource(nodeOut, [nodeIn], graph)) {
+                 trippedBreakers.add(dev.id);
+                 errors.push(`${dev.type} Trip: Earth Fault!`);
              }
         }
+    });
+
+    return { energizedComponents: new Set(), trippedBreakers, errors, flowingWires: new Map(), nodePotentials };
+  }
+
+  // 5. Determine Energized Loads (for visual feedback)
+  components.forEach(comp => {
+    let isEnergized = false;
+    const checkSinglePhase = (lTerm: string, nTerm: string) => {
+        const lNode = getNodeId(comp.id, lTerm);
+        const nNode = getNodeId(comp.id, nTerm);
+        return allLiveNodes.has(lNode) && neutralNodes.has(nNode);
+    };
+
+    if (['LAMP_PENDANT', 'SOCKET_DOUBLE', 'SOCKET_SINGLE', 'FAN', 'FAN_PLUG'].includes(comp.type)) {
+        if (checkSinglePhase('L', 'N')) isEnergized = true;
+    } 
+    else if (comp.type === 'SWITCH_COOKER') {
+         if (checkSinglePhase('L_IN', 'N_IN')) isEnergized = true;
     }
 
     if (isEnergized) {
@@ -308,71 +305,30 @@ export const runSimulation = (
     }
   });
 
-  // --- Trace Flow Backwards from Loads to Source to mark ACTIVE wires ---
-  // If a wire is voltage-live but not feeding a load, it shouldn't show flow animation.
-  
-  const lFlowVisited = new Set<NodeId>(loadLNodes);
-  const lFlowQueue = Array.from(loadLNodes);
+  // 6. Calculate Flowing Wires
+  if (energizedComponents.size > activeSources.length) { 
+      wires.forEach(w => {
+        const u = getNodeId(w.fromCompId, w.fromTerminal);
+        const v = getNodeId(w.toCompId, w.toTerminal);
 
-  while(lFlowQueue.length > 0) {
-      const curr = lFlowQueue.shift()!;
-      const d = distMap.get(curr)!;
-      const neighbors = graph.get(curr) || [];
-      
-      neighbors.forEach(next => {
-          // Go "upstream" (lower distance to source)
-          if (lVisited.has(next)) {
-              const nd = distMap.get(next)!;
-              if (nd < d && !lFlowVisited.has(next)) {
-                  lFlowVisited.add(next);
-                  lFlowQueue.push(next);
-              }
-          }
+        // Check if wire is on the LIVE side (Any Phase)
+        if (allLiveNodes.has(u) && allLiveNodes.has(v)) {
+            const d1 = combinedLiveDist.get(u);
+            const d2 = combinedLiveDist.get(v);
+            if (d1 !== undefined && d2 !== undefined && d1 !== d2) {
+                flowingWires.set(w.id, d1 < d2);
+            }
+        }
+        // Check if wire is on the NEUTRAL side
+        else if (neutralNodes.has(u) && neutralNodes.has(v)) {
+            const d1 = nDist.get(u);
+            const d2 = nDist.get(v);
+            if (d1 !== undefined && d2 !== undefined && d1 !== d2) {
+                flowingWires.set(w.id, d1 > d2);
+            }
+        }
       });
   }
 
-  const nFlowVisited = new Set<NodeId>(loadNNodes);
-  const nFlowQueue = Array.from(loadNNodes);
-
-  while(nFlowQueue.length > 0) {
-      const curr = nFlowQueue.shift()!;
-      const d = nDistMap.get(curr)!;
-      const neighbors = graph.get(curr) || [];
-      
-      neighbors.forEach(next => {
-          // Go "upstream" (lower distance to source N)
-          if (nVisited.has(next)) {
-              const nd = nDistMap.get(next)!;
-              if (nd < d && !nFlowVisited.has(next)) {
-                  nFlowVisited.add(next);
-                  nFlowQueue.push(next);
-              }
-          }
-      });
-  }
-
-  // Determine Flowing Wires based on Active Trace
-  wires.forEach(w => {
-      const u = getNodeId(w.fromCompId, w.fromTerminal);
-      const v = getNodeId(w.toCompId, w.toTerminal);
-      
-      // Live Flow (only if on active path)
-      if (lFlowVisited.has(u) && lFlowVisited.has(v)) {
-          const d1 = distMap.get(u);
-          const d2 = distMap.get(v);
-          if (d1 !== undefined && d2 !== undefined && d1 !== d2) {
-              flowingWires.set(w.id, d1 < d2);
-          }
-      }
-      // Neutral Return Flow (only if on active path)
-      else if (nFlowVisited.has(u) && nFlowVisited.has(v)) {
-          const d1 = nDistMap.get(u);
-          const d2 = nDistMap.get(v);
-          if (d1 !== undefined && d2 !== undefined && d1 !== d2) {
-              flowingWires.set(w.id, d1 > d2); // Flow towards source (smaller dist)
-          }
-      }
-  });
-
-  return { energizedComponents, trippedBreakers, errors: Array.from(uniqueErrors), flowingWires, nodePotentials: potentialMap };
+  return { energizedComponents, trippedBreakers, errors, flowingWires, nodePotentials };
 };
