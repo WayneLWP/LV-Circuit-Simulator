@@ -8,7 +8,7 @@ import { PropertiesPanel } from './components/PropertiesPanel';
 import { Multimeter } from './components/Multimeter';
 import { Megger } from './components/Megger';
 import { runSimulation } from './utils/circuit';
-import { RotateCcw, Zap, ShieldAlert, Trash2, Eye, EyeOff, Pipette, Activity, ChevronDown, ChevronRight, Calculator, Plug, Copy, RotateCw, PenTool, ClipboardCheck } from 'lucide-react';
+import { RotateCcw, Zap, ShieldAlert, Trash2, Eye, EyeOff, Pipette, Activity, ChevronDown, ChevronRight, Calculator, Plug, Copy, RotateCw, PenTool, ClipboardCheck, Undo } from 'lucide-react';
 
 const SNAP_GRID = 10;
 const STUB_LENGTH = 10; // Default stub length
@@ -314,6 +314,9 @@ export default function App() {
   const [components, setComponents] = useState<ComponentInstance[]>([]);
   const [wires, setWires] = useState<Wire[]>([]);
   
+  // History State
+  const [history, setHistory] = useState<{components: ComponentInstance[], wires: Wire[]}[]>([]);
+  
   // View State (Pan & Zoom)
   const [viewState, setViewState] = useState({ x: 0, y: 0, scale: 1 });
   const [isPanning, setIsPanning] = useState(false);
@@ -339,6 +342,7 @@ export default function App() {
   const [isDraggingComp, setIsDraggingComp] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState<Position>({ x: 0, y: 0 }); // Offset in WORLD coordinates
   const [draggingPlug, setDraggingPlug] = useState<string | null>(null); // Component ID whose plug is being dragged
+  const dragStartSnapshot = useRef<{components: ComponentInstance[], wires: Wire[]} | null>(null);
   
   // Multimeter State
   const [multimeter, setMultimeter] = useState<MultimeterState>({
@@ -385,6 +389,25 @@ export default function App() {
   } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // --- History Management ---
+  const saveHistory = useCallback(() => {
+    setHistory(prev => {
+        const newHistory = [...prev, { components, wires }];
+        if (newHistory.length > 50) newHistory.shift();
+        return newHistory;
+    });
+  }, [components, wires]);
+
+  const handleUndo = () => {
+    if (history.length === 0) return;
+    const lastState = history[history.length - 1];
+    setComponents(lastState.components);
+    setWires(lastState.wires);
+    setHistory(prev => prev.slice(0, prev.length - 1));
+    setSelectedCompId(null);
+    setSelectedWireId(null);
+  };
 
   // --- Coordinate Helpers ---
 
@@ -611,12 +634,14 @@ export default function App() {
       setCurrentWireColor(color);
       // If a wire is selected, update its color
       if (selectedWireId) {
+          saveHistory();
           setWires(prev => prev.map(w => w.id === selectedWireId ? { ...w, color } : w));
       }
   };
 
   const toggleSleeving = (color: WireColor) => {
     if (selectedWireId) {
+      saveHistory();
       setWires(prev => prev.map(w => {
         if (w.id === selectedWireId) {
           // Toggle off if same color, otherwise set new color
@@ -628,6 +653,7 @@ export default function App() {
   };
 
   const updateComponent = useCallback((id: string, updates: Partial<ComponentInstance> | ((prev: ComponentInstance) => Partial<ComponentInstance>)) => {
+    saveHistory();
     setComponents(prev => prev.map(c => {
       if (c.id !== id) return c;
       const newValues = typeof updates === 'function' ? updates(c) : updates;
@@ -643,13 +669,15 @@ export default function App() {
 
       return { ...c, ...newValues };
     }));
-  }, []);
+  }, [saveHistory]);
 
   const updateWire = useCallback((id: string, updates: Partial<Wire>) => {
+    saveHistory();
     setWires(prev => prev.map(w => w.id === id ? { ...w, ...updates } : w));
-  }, []);
+  }, [saveHistory]);
 
   const addComponent = (type: string) => {
+    saveHistory();
     const def = COMPONENT_CATALOG[type];
     if (!def) {
       console.error(`Component definition missing for: ${type}`);
@@ -709,6 +737,7 @@ export default function App() {
   };
 
   const addConsumerUnit = () => {
+    saveHistory();
     const container = containerRef.current;
     let centerX = 400; 
     let centerY = 300;
@@ -826,12 +855,14 @@ export default function App() {
   };
 
   const deleteComponent = useCallback((id: string) => {
+    saveHistory();
     setComponents(prev => prev.filter(c => c.id !== id));
     setWires(prev => prev.filter(w => w.fromCompId !== id && w.toCompId !== id));
     setSelectedCompId(null);
-  }, []);
+  }, [saveHistory]);
 
   const duplicateComponent = useCallback((id: string) => {
+     saveHistory();
      const original = components.find(c => c.id === id);
      if (!original) return;
 
@@ -875,9 +906,10 @@ export default function App() {
      };
      setComponents(prev => [...prev, newComp]);
      setSelectedCompId(newComp.id);
-  }, [components]);
+  }, [components, saveHistory]);
 
   const rotateComponent = useCallback((id: string) => {
+    saveHistory();
     setComponents(prev => {
         const c = prev.find(comp => comp.id === id);
         if (!c) return prev;
@@ -894,14 +926,16 @@ export default function App() {
 
         return prev.map(comp => comp.id === id ? { ...comp, rotation: newRotation } : comp);
     });
-  }, []);
+  }, [saveHistory]);
 
   const deleteWire = useCallback((id: string) => {
+    saveHistory();
     setWires(prev => prev.filter(w => w.id !== id));
     setSelectedWireId(null);
-  }, []);
+  }, [saveHistory]);
 
   const clearAll = () => {
+    saveHistory();
     setComponents([]);
     setWires([]);
     setSelectedCompId(null);
@@ -1527,6 +1561,23 @@ export default function App() {
         }));
     }
 
+    // Check history save for drags
+    if ((isDraggingComp || draggingWireSegment || draggingPlug) && dragStartSnapshot.current) {
+        // Simple equality check is not enough because objects are new references.
+        // We assume if a drag operation was active and mouse moved (which updates state), state changed.
+        // We rely on checking if current state is different from snapshot.
+        const changed = components !== dragStartSnapshot.current.components || wires !== dragStartSnapshot.current.wires;
+        if (changed) {
+             const snapshot = dragStartSnapshot.current;
+             setHistory(prev => {
+                const newH = [...prev, snapshot];
+                if (newH.length > 50) newH.shift();
+                return newH;
+             });
+        }
+        dragStartSnapshot.current = null;
+    }
+
     setIsPanning(false);
     setIsDraggingComp(null);
     setDraggingWireSegment(null);
@@ -1546,6 +1597,10 @@ export default function App() {
     setSelectedWireId(null);
     const comp = components.find(c => c.id === id);
     if (!comp) return;
+
+    // Snapshot state for Undo
+    dragStartSnapshot.current = { components, wires };
+
     const worldPos = screenToWorld(e.clientX, e.clientY);
     setDragOffset({
       x: worldPos.x - comp.position.x,
@@ -1558,6 +1613,8 @@ export default function App() {
       e.preventDefault(); // Prevent text selection etc
       setDraggingPlug(compId);
       setSelectedCompId(compId);
+      // Snapshot state for Undo
+      dragStartSnapshot.current = { components, wires };
   };
 
   const handleTerminalMouseDown = (e: React.MouseEvent, compId: string, termId: string) => {
@@ -1660,6 +1717,7 @@ export default function App() {
           handlePos: finalHandlePos
         };
 
+        saveHistory();
         setWires([...wires, newWire]);
         setSelectedWireId(newWire.id); 
         setSelectedCompId(null);
@@ -1686,10 +1744,13 @@ export default function App() {
       setSelectedWireId(wireId);
       setSelectedCompId(null);
       setDraggingWireSegment({ id: wireId, segment });
+      // Snapshot state for Undo
+      dragStartSnapshot.current = { components, wires };
   }
 
   const handleWireHandleDoubleClick = (e: React.MouseEvent, wire: Wire, currentGeometry: any) => {
       e.stopPropagation();
+      saveHistory();
       const start = currentGeometry.points[0];
       const end = currentGeometry.points[currentGeometry.points.length - 1];
 
@@ -2110,6 +2171,14 @@ export default function App() {
           >
              <PenTool size={16} />
              {showSymbols ? 'Hide Symbol' : 'Show Symbol'}
+          </button>
+          <button 
+            onClick={handleUndo}
+            disabled={history.length === 0}
+            className={`flex items-center gap-2 px-3 py-1 bg-slate-600 hover:bg-slate-500 rounded text-sm transition-colors ${history.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
+            title="Undo last action"
+          >
+             <Undo size={16} /> Undo
           </button>
           <button 
             onClick={clearAll}
